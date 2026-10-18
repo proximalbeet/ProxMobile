@@ -49,8 +49,10 @@ the proxai `.env` and a gateway restart. That's why `tailscale serve` is recomme
 
 1. Install Tailscale on the phone and sign in to the same tailnet.
 2. Install `ProxAI-0.1.0.apk` (copy it over, or `adb install -r ProxAI-0.1.0.apk`).
-3. Open ProxAI → **Settings**: enter the server URL and the proxai **API_SERVER_KEY**, then tap
-   **Save & test**.
+3. Connect the app. Easiest: run `./scripts/phone-qr.sh` on the PC, scan the QR code with the
+   phone camera, open it in ProxAI and tap **Connect**, then **Save & test**. Or type the server
+   URL and the proxai **API_SERVER_KEY** into **Settings** yourself. The key is the `.env` value
+   *including* its `<` `>` but without the trailing `# …` comment.
 4. Under **Power button**: allow the microphone, then tap **Open settings** and choose ProxAI as
    the *Digital assistant app*.
 5. Set press-and-hold power to open the assistant:
