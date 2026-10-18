@@ -11,6 +11,10 @@ interface HermesConfig {
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && apiKey.isNotBlank()
 }
 
+/** Server URL without a trailing slash or /v1, e.g. https://desktop.tail773dbb.ts.net */
+val HermesConfig.baseUrl: String
+    get() = serverUrl.trim().trimEnd('/').removeSuffix("/v1").trimEnd('/')
+
 /** App preferences, stored in the app's private storage. */
 class Settings(context: Context) : HermesConfig {
     private val prefs = context.getSharedPreferences("proxai", Context.MODE_PRIVATE)
@@ -29,6 +33,11 @@ class Settings(context: Context) : HermesConfig {
     override var model: String
         get() = prefs.getString("model", "") ?: ""
         set(v) = prefs.edit().putString("model", v.trim()).apply()
+
+    /** Speak replies in the Kanye voice generated on the PC (falls back to the phone voice). */
+    var kanyeVoice: Boolean
+        get() = prefs.getBoolean("kanye_voice", true)
+        set(v) = prefs.edit().putBoolean("kanye_voice", v).apply()
 
     var speakReplies: Boolean
         get() = prefs.getBoolean("speak_replies", true)

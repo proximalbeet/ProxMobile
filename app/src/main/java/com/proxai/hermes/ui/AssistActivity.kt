@@ -99,6 +99,7 @@ class AssistActivity : ComponentActivity() {
 
         setContent { ProxTheme { Overlay() } }
 
+        if (app.settings.isConfigured && app.settings.speakReplies) speech.warmupVoice()
         if (app.settings.autoListen && app.settings.isConfigured) startListening()
     }
 
@@ -229,6 +230,7 @@ class AssistActivity : ComponentActivity() {
                         error != null && mic == MicState.Idle -> error!!
                         mic == MicState.Listening -> partial.ifEmpty { "Listening…" }
                         mic == MicState.Thinking || busy -> "Hermes is working…"
+                        mic == MicState.Preparing -> "Ye is getting his voice ready…"
                         mic == MicState.Speaking -> "Speaking — tap the orb to interrupt"
                         visible.isEmpty() -> "Tap to talk"
                         else -> ""
@@ -282,13 +284,13 @@ private fun MicOrb(state: MicState, level: Float, busy: Boolean, onClick: () -> 
     val voice by animateFloatAsState(1f + level * 0.35f, label = "v")
     val scale = when {
         state == MicState.Listening -> voice
-        busy || state == MicState.Speaking -> breathe
+        busy || state == MicState.Speaking || state == MicState.Preparing -> breathe
         else -> 1f
     }
     val colors = when {
         state == MicState.Listening -> listOf(Mint, Color(0xFF3FA796))
         busy -> listOf(Brand, BrandDeep)
-        state == MicState.Speaking -> listOf(Color(0xFFC9BCFF), Brand)
+        state == MicState.Speaking || state == MicState.Preparing -> listOf(Color(0xFFC9BCFF), Brand)
         else -> listOf(Brand, BrandDeep)
     }
     Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {

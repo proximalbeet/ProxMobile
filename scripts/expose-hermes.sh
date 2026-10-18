@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Makes the proxai Hermes API server (127.0.0.1:8642) reachable from your phone over Tailscale,
-# with an HTTPS URL only devices on your tailnet can reach. Hermes's own config is untouched.
+# Makes the proxai Hermes API server (127.0.0.1:8642) and the Kanye voice service (8653, at
+# /voice) reachable from your phone over Tailscale, with an HTTPS URL only devices on your
+# tailnet can reach. Hermes's own config is untouched.
 #
 #   ./scripts/expose-hermes.sh          # turn on
 #   ./scripts/expose-hermes.sh off      # turn off
@@ -25,6 +26,8 @@ fi
 # If this fails with "access denied", run once: sudo tailscale set --operator=$USER
 echo "Starting Tailscale Serve (if it shows a link, open it and click Enable)…"
 tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}"
+# Kanye voice for the app (server/kanye_voice_server.py, see install-voice-service.sh).
+tailscale serve --bg --https=443 --set-path /voice "http://127.0.0.1:${VOICE_PORT:-8653}"
 
 HOST="$(tailscale status --self --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
 echo

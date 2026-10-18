@@ -64,6 +64,28 @@ the proxai `.env` and a gateway restart. That's why `tailscale serve` is recomme
 Speech recognition uses Google's recognizer (or the on-device one). Android points the
 "default" recognizer at the assistant app, so ProxAI picks a real recognizer itself.
 
+## Kanye voice
+
+Spoken replies use the same `kanye` voice as Hermes on Discord (Chatterbox voice cloning from
+`~/.hermes/profiles/proxai/voice/reference/kanye.wav`). `server/kanye_voice_server.py` runs on the
+PC with Hermes's own Chatterbox venv and reuses its `tts_pipeline.py` settings, so the voice is
+identical. Hermes's config and voice script are not modified.
+
+- Listens on `127.0.0.1:8653`. Tailscale Serve publishes it at `https://<desktop>.ts.net/voice`
+  (tailnet only). Requests need the proxai `API_SERVER_KEY`.
+- The model stays loaded between replies (about 1–1.5 s per sentence) and is dropped after 5 idle
+  minutes, giving its ~3.4 GB of VRAM back to Ollama. A cold start takes about 9 s; the app hides
+  most of it by asking the PC to warm up the moment the power-button overlay opens.
+- The app plays a reply sentence by sentence, fetching the next sentence while the current one
+  plays. If the PC can't be reached it says so and uses the phone's voice. Switch it off in
+  Settings → Voice → **Kanye voice**, and use **Test voice** to hear it.
+
+```bash
+./scripts/install-voice-service.sh          # install + start; starts at boot from then on
+./scripts/install-voice-service.sh remove   # uninstall
+journalctl --user -u proxai-phone-voice -f  # logs: one line per spoken piece
+```
+
 ## Build
 
 The toolchain lives in `~/Android` (JDK 17, SDK 35, no root needed):

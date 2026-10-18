@@ -11,11 +11,31 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.widget.Toast
+import com.proxai.hermes.ProxApp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.supervisorScope
+import java.io.File
 import java.util.Locale
+import kotlin.coroutines.resume
 
-enum class MicState { Idle, Listening, Thinking, Speaking }
+/** Preparing = waiting for the PC to generate the first Kanye audio. */
+enum class MicState { Idle, Listening, Thinking, Preparing, Speaking }
 
 /**
  * Speech-to-text + text-to-speech for one screen. Create in onCreate, call [release] in onDestroy.
@@ -39,6 +59,18 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var pendingSpeech: String? = null
+    private var lastUtterance: String? = null
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val settings get() = ProxApp.instance.settings
+    private val kanye by lazy { KanyeVoice(settings, context.cacheDir) }
+    private var kanyeJob: Job? = null
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private val speechAttrs = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        .setAudioAttributes(speechAttrs).build()
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -47,9 +79,9 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                 tts?.language = Locale.getDefault()
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) { _state.value = MicState.Speaking }
-                    override fun onDone(id: String?) = spokeDone()
-                    @Deprecated("Deprecated in Java") override fun onError(id: String?) = spokeDone()
-                    override fun onStop(id: String?, interrupted: Boolean) = spokeDone()
+                    override fun onDone(id: String?) { if (id == lastUtterance) spokeDone() }
+                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { if (id == lastUtterance) spokeDone() }
+                    override fun onStop(id: String?, interrupted: Boolean) {}
                 })
                 pendingSpeech?.let { speak(it) }
                 pendingSpeech = null
@@ -58,7 +90,8 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     }
 
     private fun spokeDone() {
-        if (_state.value == MicState.Speaking) _state.value = MicState.Idle
+        audio?.abandonAudioFocusRequest(focus)
+        if (_state.value == MicState.Speaking || _state.value == MicState.Preparing) _state.value = MicState.Idle
         onSpeakDone?.let { cb -> android.os.Handler(context.mainLooper).post { cb() } }
     }
 
@@ -115,24 +148,88 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         else if (_state.value == MicState.Thinking) _state.value = MicState.Idle
     }
 
+    /** Load the Kanye model on the PC now, so the reply doesn't wait for it (~9 s cold). */
+    fun warmupVoice() {
+        if (settings.kanyeVoice) kanye.warmup()
+    }
+
     fun speak(text: String) {
         val clean = spokenText(text)
         if (clean.isBlank()) { spokeDone(); return }
-        if (!ttsReady) { pendingSpeech = text; return }
+        stopSpeaking()
+        audio?.requestAudioFocus(focus)
+        if (settings.kanyeVoice && settings.isConfigured) speakKanye(clean) else speakPhone(clean)
+    }
+
+    private fun speakPhone(clean: String) {
+        if (!ttsReady) { pendingSpeech = clean; return }
         _state.value = MicState.Speaking
         // TTS has a per-utterance length limit; split long replies.
-        clean.chunked(3500).forEachIndexed { i, part ->
+        val parts = clean.chunked(3500)
+        lastUtterance = "proxai-${parts.size - 1}"
+        parts.forEachIndexed { i, part ->
             tts?.speak(part, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "proxai-$i")
         }
     }
 
+    /** Plays the reply sentence by sentence, fetching the next piece while the current one plays. */
+    private fun speakKanye(clean: String) {
+        val parts = KanyeVoice.chunks(clean)
+        if (parts.isEmpty()) { spokeDone(); return }
+        _state.value = MicState.Preparing
+        kanyeJob = scope.launch {
+            supervisorScope {
+                var next: Deferred<File>? = async(Dispatchers.IO) { kanye.synth(parts[0]) }
+                for (i in parts.indices) {
+                    val file = try {
+                        next!!.await()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // PC off, service down, GPU busy...: say the rest in the phone voice.
+                        Toast.makeText(context, "${e.message ?: "Kanye voice unavailable"} — using phone voice", Toast.LENGTH_SHORT).show()
+                        speakPhone(parts.drop(i).joinToString(" "))
+                        return@supervisorScope
+                    }
+                    next = if (i + 1 < parts.size) async(Dispatchers.IO) { kanye.synth(parts[i + 1]) } else null
+                    _state.value = MicState.Speaking
+                    try { play(file) } finally { file.delete() }
+                }
+                spokeDone()
+            }
+        }
+    }
+
+    private suspend fun play(file: File) = suspendCancellableCoroutine { cont ->
+        val mp = MediaPlayer()
+        fun done() {
+            runCatching { mp.release() }
+            if (cont.isActive) cont.resume(Unit)
+        }
+        try {
+            mp.setAudioAttributes(speechAttrs)
+            mp.setDataSource(file.path)
+            mp.setOnCompletionListener { done() }
+            mp.setOnErrorListener { _, _, _ -> done(); true }
+            mp.prepare()
+            mp.start()
+        } catch (e: Exception) {
+            done()
+        }
+        cont.invokeOnCancellation { runCatching { mp.stop() }; runCatching { mp.release() } }
+    }
+
     fun stopSpeaking() {
+        kanyeJob?.cancel(); kanyeJob = null
         if (tts?.isSpeaking == true) tts?.stop()
-        if (_state.value == MicState.Speaking) _state.value = MicState.Idle
+        if (_state.value == MicState.Speaking || _state.value == MicState.Preparing) _state.value = MicState.Idle
+        audio?.abandonAudioFocusRequest(focus)
     }
 
     fun release() {
         onSpeakDone = null
+        stopSpeaking()
+        scope.cancel()
         recognizer?.destroy(); recognizer = null
         tts?.stop(); tts?.shutdown(); tts = null
     }

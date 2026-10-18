@@ -36,8 +36,7 @@ class HermesClient(private val settings: HermesConfig) {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    private val baseUrl: String
-        get() = settings.serverUrl.trim().trimEnd('/').removeSuffix("/v1").trimEnd('/')
+    private val baseUrl: String get() = settings.baseUrl
 
     fun stream(system: String?, user: String, sessionId: String): Flow<StreamEvent> = callbackFlow {
         if (!settings.isConfigured) {

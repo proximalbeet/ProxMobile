@@ -51,6 +51,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.proxai.hermes.ProxApp
+import com.proxai.hermes.voice.MicState
+import com.proxai.hermes.voice.SpeechController
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +67,10 @@ fun SettingsScreen() {
     var key by remember { mutableStateOf(s.apiKey) }
     var model by remember { mutableStateOf(s.model) }
     var speak by remember { mutableStateOf(s.speakReplies) }
+    var kanye by remember { mutableStateOf(s.kanyeVoice) }
+    val voiceTester = remember { SpeechController(ctx) {} }
+    DisposableEffect(Unit) { onDispose { voiceTester.release() } }
+    val testerState by voiceTester.state.collectAsState()
     var autoListen by remember { mutableStateOf(s.autoListen) }
     var handsFree by remember { mutableStateOf(s.handsFree) }
     var status by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
@@ -142,6 +150,24 @@ fun SettingsScreen() {
 
             Section("Voice")
             Toggle("Read replies aloud", speak) { speak = it; s.speakReplies = it }
+            Toggle("Kanye voice (made on your PC)", kanye) { kanye = it; s.kanyeVoice = it }
+            Text(
+                if (kanye) "Same voice as Discord. Needs the PC on; the first reply after a few idle minutes takes ~10 s while the voice loads. Falls back to the phone voice if the PC can't be reached."
+                else "Uses the phone's built-in voice.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(
+                enabled = testerState == MicState.Idle,
+                onClick = {
+                    save()
+                    voiceTester.speak("Yo, it's Ye. This is how I sound on your phone now. Let's build something.")
+                },
+            ) {
+                Text(when (testerState) {
+                    MicState.Preparing -> "Loading voice…"
+                    MicState.Speaking -> "Speaking…"
+                    else -> "Test voice"
+                })
+            }
             Toggle("Start listening when the assistant opens", autoListen) { autoListen = it; s.autoListen = it }
             Toggle("Hands-free: keep listening after each reply", handsFree) { handsFree = it; s.handsFree = it }
 
