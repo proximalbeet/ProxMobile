@@ -12,12 +12,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +32,8 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableIntStateOf(0)
     private var remixAppId by mutableStateOf<String?>(null)
     private var draft by mutableStateOf("")
+    private var pendingConnect by mutableStateOf<Pair<String, String>?>(null)
+    private var settingsVersion by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,9 +60,28 @@ class MainActivity : ComponentActivity() {
                                 onOpenApp = ::openApp, onRemixApp = ::remix)
                             1 -> AppsScreen(onOpenApp = ::openApp, onRemixApp = ::remix,
                                 onBuildNew = { draft = it; tab = 0 })
-                            else -> SettingsScreen()
+                            else -> key(settingsVersion) { SettingsScreen() }
                         }
                     }
+                }
+                pendingConnect?.let { (url, key) ->
+                    // Always confirm: a link from anywhere could otherwise repoint the app.
+                    AlertDialog(
+                        onDismissRequest = { pendingConnect = null },
+                        title = { Text("Connect to Hermes?") },
+                        text = { Text("Use this server for ProxAI?\n\n$url") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val s = ProxApp.instance.settings
+                                s.serverUrl = url
+                                s.apiKey = key
+                                pendingConnect = null
+                                tab = 2
+                                settingsVersion++ // SettingsScreen reads settings once; rebuild it
+                            }) { Text("Connect") }
+                        },
+                        dismissButton = { TextButton(onClick = { pendingConnect = null }) { Text("Cancel") } },
+                    )
                 }
             }
         }
@@ -69,6 +93,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        val uri = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "proxai" && uri.host == "connect") {
+            val url = uri.getQueryParameter("url").orEmpty()
+            val key = uri.getQueryParameter("key").orEmpty()
+            if (url.startsWith("http") && key.isNotBlank()) pendingConnect = url to key
+            intent.data = null // don't re-prompt on rotation
+        }
         intent?.getStringExtra(EXTRA_REMIX)?.let { remix(it) }
         if (intent?.getBooleanExtra(EXTRA_CHAT, false) == true) tab = 0
     }

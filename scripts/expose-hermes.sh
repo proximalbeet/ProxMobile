@@ -20,7 +20,10 @@ if ! curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
   exit 1
 fi
 
+# First run on a tailnet: Tailscale prints "Serve is not enabled on your tailnet" plus a
+# login.tailscale.com link and waits. Open the link, click Enable, and this continues.
 # If this fails with "access denied", run once: sudo tailscale set --operator=$USER
+echo "Starting Tailscale Serve (if it shows a link, open it and click Enable)…"
 tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}"
 
 HOST="$(tailscale status --self --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"

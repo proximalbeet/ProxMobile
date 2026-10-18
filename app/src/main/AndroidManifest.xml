@@ -34,6 +34,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- proxai://connect?url=...&key=... (from the desktop QR code) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="proxai" android:host="connect" />
+            </intent-filter>
         </activity>
 
         <!-- Voice overlay opened by long-press power / assist gesture / QS tile -->
