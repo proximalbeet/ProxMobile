@@ -24,7 +24,9 @@ fi
 mkdir -p "$(dirname "$DEST")"
 install -m 0644 "$REPO/server/$NAME" "$DEST"
 systemctl --user daemon-reload
-systemctl --user enable --now "$NAME"
+systemctl --user enable "$NAME"
+# restart (not start) so re-running this after an update picks up the new code and unit.
+systemctl --user restart "$NAME"
 
 # Wait for it to answer (it starts in a couple of seconds; the model loads on first use).
 curl -fsS --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:8653/health && echo
