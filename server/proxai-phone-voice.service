@@ -10,6 +10,8 @@ ExecStart=%h/.hermes/profiles/proxai/voice/.venv-chatterbox/bin/python %h/dev/pr
 # Drop the model (~3.4 GB VRAM) after 5 idle minutes so Ollama gets the GPU back.
 Environment=PROXAI_VOICE_IDLE=300
 Environment=PYTHONUNBUFFERED=1
+# Hide Chatterbox's per-sentence progress bars so the journal has one line per reply piece.
+Environment=TQDM_DISABLE=1
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
