@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- winged "H" spark for Hermes -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M40,34h7v16h14V34h7v40h-7V57H47v17h-7z"/>
+    <path android:fillColor="#C9BCFF"
+        android:pathData="M68,38c6,-2 12,-1 16,2c-5,0 -9,2 -12,5l-4,0z M40,38c-6,-2 -12,-1 -16,2c5,0 9,2 12,5l4,0z"/>
+</vector>
