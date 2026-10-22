@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,7 +96,34 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         onSpeakDone?.let { cb -> android.os.Handler(context.mainLooper).post { cb() } }
     }
 
+    // ---- Speech to text ------------------------------------------------------------------------
+    //
+    // One "dictation" = one mic tap. Google's recognizer ends a segment at every short pause, so
+    // the segments are joined and listening restarts until you've been quiet for
+    // settings.sendPauseMs (or you tap send). Fixes from the 2026-10-22 drive:
+    //  * a fresh recognizer on every mic tap, and a rebuilt one after any error, so a restarted or
+    //    updated Google speech service can't leave the mic dead until the phone reboots
+    //  * after repeated Google failures, the phone's on-device recognizer is used instead
+    //  * every error is shown and logged (ERROR_CLIENT used to be hidden)
+
+    private var dictating = false
+    private var generation = 0
+    private val heard = StringBuilder()
+    private var segmentPartial = ""
+    private var retries = 0
+    private var emptyRetryUsed = false
+    private var startedAt = 0L
+    private var pauseJob: Job? = null
+    private var failuresInARow = 0
+    private var midFailures = 0
+    private var useOnDevice = false
+
     private fun createRecognizer(): SpeechRecognizer? {
+        val onDeviceOk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+        if (useOnDevice && onDeviceOk) {
+            SpeechLog.add("using the on-device recognizer")
+            return SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+        }
         val own = context.packageName
         val services = context.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
             .map { it.serviceInfo }
@@ -106,42 +134,252 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         if (preferred != null) {
             return SpeechRecognizer.createSpeechRecognizer(context, ComponentName(preferred.packageName, preferred.name))
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-            return SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-        }
+        if (onDeviceOk) return SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
         return null
     }
 
+    private fun dropRecognizer() {
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+    }
+
+    private fun recognizerIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        // Ask for longer pauses; many recognizers ignore these, which is why segments are joined.
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+        if (Build.VERSION.SDK_INT >= 33) {
+            // Words it should expect (cron, firmware, Hermes...): fewer "crime"/"firewall" mix-ups.
+            putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, SpeechFixes.vocabulary(settings.vocabulary))
+        }
+    }
+
+    /** Start a dictation (mic tap, power button, hands-free). */
     fun listen() {
         stopSpeaking()
+        cancelPause()
         _error.value = null
         _partial.value = ""
+        heard.clear()
+        segmentPartial = ""
+        retries = MAX_RETRIES
+        midFailures = 0
+        emptyRetryUsed = false
+        startedAt = System.currentTimeMillis()
+        dictating = true
+        // A recognizer kept from earlier can be bound to a speech service that has since restarted.
+        dropRecognizer()
+        startSegment()
+    }
+
+    private fun startSegment() {
+        if (!dictating) return
         val rec = recognizer ?: createRecognizer()?.also { recognizer = it }
         if (rec == null) {
-            _error.value = "No speech recognizer on this phone. Install/enable the Google app."
+            endDictation("No speech recognizer on this phone. Install or enable the Google app.")
             return
         }
-        rec.setRecognitionListener(listener)
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        }
+        val gen = ++generation
+        rec.setRecognitionListener(Listener(gen))
+        segmentPartial = ""
         _state.value = MicState.Listening
-        rec.startListening(intent)
+        try {
+            rec.startListening(recognizerIntent())
+        } catch (e: Exception) {
+            SpeechLog.add("startListening threw ${e.javaClass.simpleName}: ${e.message}")
+            recover("Speech recognizer failed to start", SpeechRecognizer.ERROR_CLIENT)
+        }
     }
 
-    fun stopListening() {
-        recognizer?.stopListening()
+    private fun restartSegmentSoon() {
+        scope.launch {
+            delay(200) // restarting instantly can make some recognizers answer "busy"
+            if (dictating) startSegment()
+        }
     }
 
+    private fun schedulePause(ms: Long) {
+        cancelPause()
+        pauseJob = scope.launch {
+            delay(ms)
+            if (dictating) finishNow()
+        }
+    }
+
+    private fun cancelPause() {
+        pauseJob?.cancel(); pauseJob = null
+    }
+
+    private fun shownText(): String = listOf(heard.toString().trim(), segmentPartial.trim())
+        .filter { it.isNotEmpty() }.joinToString(" ")
+
+    /** True while a dictation is running (between the mic tap and sending). */
+    val isDictating: Boolean get() = dictating
+
+    /** Send what was heard so far (send button, orb tap, or the pause timer). */
+    fun finishNow() {
+        if (!dictating) return
+        val raw = shownText()
+        endDictation(null)
+        val text = SpeechFixes.apply(raw, SpeechFixes.parse(settings.wordFixes)).trim()
+        _partial.value = text
+        if (text.isNotBlank()) onFinal(text)
+    }
+
+    /** Old name, kept for callers: tapping the mic while listening sends what you said. */
+    fun stopListening() = finishNow()
+
+    /** Stop and throw away what was heard. */
     fun cancelListening() {
-        recognizer?.cancel()
+        if (dictating) endDictation(null)
         if (_state.value == MicState.Listening) _state.value = MicState.Idle
         _level.value = 0f
     }
+
+    private fun endDictation(error: String?) {
+        dictating = false
+        generation++
+        cancelPause()
+        runCatching { recognizer?.cancel() }
+        _level.value = 0f
+        if (_state.value == MicState.Listening) _state.value = MicState.Idle
+        _error.value = error
+    }
+
+    /** Recognizer broke (service died, busy, network blip...): rebuild it and try again. */
+    private fun recover(message: String, code: Int) {
+        dropRecognizer()
+        failuresInARow++
+        if (failuresInARow >= 3 && !useOnDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            useOnDevice = true
+        }
+        // Mid-dictation (you've already said something): a hiccup while restarting must not send
+        // half a sentence. Keep listening, up to MAX_MID_FAILURES in a row; the pause timer
+        // (or Send) still ends the message.
+        val midDictation = heard.isNotBlank() && midFailures < MAX_MID_FAILURES
+        if (midDictation) {
+            midFailures++
+            val pause = settings.sendPauseMs
+            if (pause > SEND_AT_ONCE_MS && pauseJob?.isActive != true) schedulePause(pause)
+        }
+        if (midDictation || retries > 0) {
+            if (!midDictation) retries--
+            SpeechLog.add("$message (${errorName(code)}), retrying with a new recognizer")
+            scope.launch {
+                delay(350)
+                if (dictating) startSegment()
+            }
+            return
+        }
+        SpeechLog.add("$message (${errorName(code)}), giving up")
+        val note = "$message (${errorName(code)})"
+        if (shownText().isNotBlank()) {
+            finishNow()
+            _error.value = note
+        } else {
+            endDictation("$note. Tap the mic to try again.")
+        }
+    }
+
+    private inner class Listener(private val gen: Int) : RecognitionListener {
+        private val live get() = dictating && gen == generation
+
+        override fun onReadyForSpeech(params: Bundle?) { if (live) _state.value = MicState.Listening }
+        override fun onBeginningOfSpeech() { if (live) cancelPause() }
+        override fun onRmsChanged(rmsdB: Float) { if (live) _level.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f) }
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() { if (live) _level.value = 0f }
+
+        override fun onError(error: Int) {
+            if (!live) return
+            _level.value = 0f
+            // Words already shown for this phrase are kept, not lost when listening restarts.
+            if (segmentPartial.isNotBlank()) {
+                if (heard.isNotEmpty()) heard.append(' ')
+                heard.append(segmentPartial.trim())
+                segmentPartial = ""
+            }
+            val pause = settings.sendPauseMs
+            when (error) {
+                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                    if (heard.isNotBlank()) {
+                        // Silence after you'd already said something.
+                        when {
+                            overTime() || pause in 1..SEND_AT_ONCE_MS -> finishNow()
+                            else -> {
+                                // e.g. a cough or road noise stopped the timer: start it again.
+                                if (pause > 0 && pauseJob?.isActive != true) schedulePause(pause)
+                                restartSegmentSoon()
+                            }
+                        }
+                    } else if (!emptyRetryUsed) {
+                        // Nothing heard at all: listen once more before giving up.
+                        emptyRetryUsed = true
+                        SpeechLog.add("${errorName(error)} with no words, listening once more")
+                        restartSegmentSoon()
+                    } else {
+                        endDictation("Didn't catch that. Tap the mic to try again.")
+                    }
+                }
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    SpeechLog.add(errorName(error))
+                    endDictation("Microphone permission is needed.")
+                }
+                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                    recover("Speech recognition lost the network", error)
+                SpeechRecognizer.ERROR_AUDIO ->
+                    recover("Couldn't use the microphone (another app or a Bluetooth mic may hold it)", error)
+                else -> recover("Speech recognizer error", error)
+            }
+        }
+
+        override fun onResults(results: Bundle?) {
+            if (!live) return
+            _level.value = 0f
+            failuresInARow = 0
+            val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().trim()
+                .ifEmpty { segmentPartial.trim() }
+            segmentPartial = ""
+            if (text.isNotEmpty()) {
+                if (heard.isNotEmpty()) heard.append(' ')
+                heard.append(text)
+                retries = MAX_RETRIES
+                midFailures = 0
+            }
+            _partial.value = shownText()
+            val pause = settings.sendPauseMs
+            when {
+                heard.isEmpty() -> onError(SpeechRecognizer.ERROR_NO_MATCH)
+                overTime() -> finishNow()
+                pause in 1..SEND_AT_ONCE_MS -> finishNow()
+                else -> {
+                    // Keep listening; send after the pause unless you start talking again.
+                    if (pause > 0) schedulePause(pause)
+                    restartSegmentSoon()
+                }
+            }
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            if (!live) return
+            val p = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+            if (p.isNotBlank()) {
+                cancelPause()
+                segmentPartial = p
+                _partial.value = shownText()
+            }
+        }
+
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    private fun overTime() = System.currentTimeMillis() - startedAt > MAX_DICTATION_MS
 
     fun setThinking(thinking: Boolean) {
         if (thinking) _state.value = MicState.Thinking
@@ -228,45 +466,38 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
 
     fun release() {
         onSpeakDone = null
+        dictating = false
+        cancelPause()
         stopSpeaking()
         scope.cancel()
         recognizer?.destroy(); recognizer = null
         tts?.stop(); tts?.shutdown(); tts = null
     }
 
-    private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) { _state.value = MicState.Listening }
-        override fun onBeginningOfSpeech() {}
-        override fun onRmsChanged(rmsdB: Float) { _level.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f) }
-        override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() { _level.value = 0f }
-        override fun onError(error: Int) {
-            _level.value = 0f
-            if (_state.value == MicState.Listening) _state.value = MicState.Idle
-            _error.value = when (error) {
-                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Didn't catch that — tap the mic to try again."
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is needed."
-                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a network connection."
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy — try again."
-                SpeechRecognizer.ERROR_CLIENT -> null
-                else -> "Speech error ($error)"
-            }
-        }
-        override fun onResults(results: Bundle?) {
-            _level.value = 0f
-            val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-            _partial.value = text
-            _state.value = MicState.Idle
-            if (text.isNotBlank()) onFinal(text)
-        }
-        override fun onPartialResults(partialResults: Bundle?) {
-            partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                ?.let { if (it.isNotBlank()) _partial.value = it }
-        }
-        override fun onEvent(eventType: Int, params: Bundle?) {}
-    }
-
     companion object {
+        private const val MAX_RETRIES = 2
+        private const val MAX_MID_FAILURES = 6
+        /** A pause setting this short means "send as soon as the recognizer stops" (the old behavior). */
+        const val SEND_AT_ONCE_MS = 900L
+        private const val MAX_DICTATION_MS = 3 * 60_000L
+
+        fun errorName(code: Int): String = when (code) {
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "network timeout"
+            SpeechRecognizer.ERROR_NETWORK -> "network"
+            SpeechRecognizer.ERROR_AUDIO -> "audio"
+            SpeechRecognizer.ERROR_SERVER -> "server"
+            SpeechRecognizer.ERROR_CLIENT -> "client"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "speech timeout"
+            SpeechRecognizer.ERROR_NO_MATCH -> "no match"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "recognizer busy"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "no mic permission"
+            10 -> "too many requests"
+            11 -> "speech service disconnected"
+            12 -> "language not supported"
+            13 -> "language unavailable"
+            else -> "error $code"
+        }
+
         /** What TTS should say: drop code blocks and markdown noise. */
         fun spokenText(text: String): String {
             val hadApp = text.contains("```html", ignoreCase = true)

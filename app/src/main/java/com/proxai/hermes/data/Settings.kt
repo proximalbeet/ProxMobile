@@ -53,6 +53,57 @@ class Settings(context: Context) : HermesConfig {
         get() = prefs.getBoolean("hands_free", false)
         set(v) = prefs.edit().putBoolean("hands_free", v).apply()
 
+    // ---- Model routing (v0.3) ----
+
+    /** "auto" = local model while the PC is in SERVER mode, cloud otherwise; "cloud"; "local". */
+    var modelChoice: String
+        get() = prefs.getString("model_choice", "auto") ?: "auto"
+        set(v) = prefs.edit().putString("model_choice", v).apply()
+
+    /** The local Ollama model Hermes runs for the phone in server mode (proxai modes.toml tier1). */
+    var localModel: String
+        get() = prefs.getString("local_model", DEFAULT_LOCAL_MODEL)?.ifBlank { DEFAULT_LOCAL_MODEL } ?: DEFAULT_LOCAL_MODEL
+        set(v) = prefs.edit().putString("local_model", v.trim()).apply()
+
+    /** Hermes provider name for that model (config.yaml custom_providers name). */
+    var localProvider: String
+        get() = prefs.getString("local_provider", DEFAULT_LOCAL_PROVIDER)?.ifBlank { DEFAULT_LOCAL_PROVIDER } ?: DEFAULT_LOCAL_PROVIDER
+        set(v) = prefs.edit().putString("local_provider", v.trim()).apply()
+
+    // ---- Speech input (v0.3) ----
+
+    /** Silence (ms) after you stop talking before a voice message is sent. 0 = only the send button. */
+    var sendPauseMs: Long
+        get() = prefs.getLong("send_pause_ms", 3000L)
+        set(v) = prefs.edit().putLong("send_pause_ms", v).apply()
+
+    /** Words the recognizer should expect (one per line), e.g. cron, firmware, Hermes. */
+    var vocabulary: String
+        get() = prefs.getString("vocabulary", DEFAULT_VOCABULARY) ?: DEFAULT_VOCABULARY
+        set(v) = prefs.edit().putString("vocabulary", v).apply()
+
+    /** "heard => meant" fixes applied to what the recognizer heard, one per line. */
+    var wordFixes: String
+        get() = prefs.getString("word_fixes", DEFAULT_WORD_FIXES) ?: DEFAULT_WORD_FIXES
+        set(v) = prefs.edit().putString("word_fixes", v).apply()
+
+    // ---- Notifications and context (v0.3) ----
+
+    /** Notify when Hermes finishes a reply while the app isn't on screen. */
+    var replyNotifications: Boolean
+        get() = prefs.getBoolean("reply_notifications", true)
+        set(v) = prefs.edit().putBoolean("reply_notifications", v).apply()
+
+    /** Auto-compact once one reply's input passes this many tokens. 0 = off. */
+    var compactAtTokens: Int
+        get() = prefs.getInt("compact_at_tokens", 60_000)
+        set(v) = prefs.edit().putInt("compact_at_tokens", v).apply()
+
+    /** Summary of a compacted session, sent with the first message of the next one. */
+    var carryOver: String
+        get() = prefs.getString("carry_over", "") ?: ""
+        set(v) = prefs.edit().putString("carry_over", v).apply()
+
     /** Hermes session id; history lives server-side in the proxai state.db. */
     var sessionId: String
         get() = prefs.getString("session_id", null) ?: newSession()
@@ -62,6 +113,15 @@ class Settings(context: Context) : HermesConfig {
         val id = "android-" + UUID.randomUUID().toString().substring(0, 13)
         sessionId = id
         return id
+    }
+
+    companion object {
+        const val DEFAULT_LOCAL_MODEL = "qwen3.5:35b-a3b"
+        const val DEFAULT_LOCAL_PROVIDER = "prox-ai"
+        const val DEFAULT_VOCABULARY = "ProxAI\nHermes\ncron\ncron job\nfirmware\ncausal\nswerve\nmock interview\n" +
+            "Ollama\nqwen\nTailscale\nObsidian\nvault\nbrain dump\nStormTrooper\nKanye\nDiscord\nGitHub\nAPI"
+        const val DEFAULT_WORD_FIXES = "crime job => cron job\ncrime jobs => cron jobs\nMac interview => mock interview\n" +
+            "Mac interviews => mock interviews\nfirewall update => firmware update\nbrain dumb => brain dump"
     }
 
 }

@@ -177,7 +177,10 @@ class AppRunnerActivity : ComponentActivity() {
             val appId = intent.getStringExtra(EXTRA_ID) ?: return
             bridgeScope.launch {
                 val result = runCatching {
-                    ProxApp.instance.hermes.ask(prompt, sessionId = "android-app-$appId", system = Prompts.APP_BRIDGE)
+                    val app = ProxApp.instance
+                    if (app.settings.modelChoice == "auto") app.pcMode.current()
+                    app.hermes.ask(prompt, sessionId = "android-app-$appId", system = Prompts.APP_BRIDGE,
+                        route = app.chat.currentRoute())
                 }
                 val payload = JSONObject()
                 result.onSuccess { payload.put("ok", true).put("text", it) }

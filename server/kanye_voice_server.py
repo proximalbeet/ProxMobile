@@ -14,6 +14,7 @@ Runs with Hermes's Chatterbox venv, listening on 127.0.0.1 only; Tailscale Serve
 https://<desktop>.ts.net/voice. Requests need the proxai API_SERVER_KEY as a Bearer token.
 
   GET  /health          status (no auth)
+  GET  /v1/mode         the PC's server/personal mode + its local model (for the app's model choice)
   POST /v1/warmup       start loading the model in the background (202)
   POST /v1/tts          {"text": "...", "voice": "kanye"} -> audio/wav
 """
@@ -138,6 +139,18 @@ class Voice:
 
 VOICE = Voice()
 KEY = ApiKey(ENV_FILE)
+MODE_FILE = Path(os.getenv("PROXAI_STATE_DIR", "~/.local/state/proxai")).expanduser() / "mode.json"
+
+
+def read_mode() -> dict:
+    """Just the mode, when it was set, and the local model it uses (never the rest of mode.json)."""
+    try:
+        state = json.loads(MODE_FILE.read_text())
+    except (OSError, ValueError):
+        return {"mode": "unknown", "local_model": None, "since": None}
+    tier1 = (state.get("hermes") or {}).get("tier1") or {}
+    return {"mode": state.get("mode") or "unknown", "since": state.get("since"),
+            "local_model": tier1.get("model") if isinstance(tier1, dict) else None}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -166,6 +179,11 @@ class Handler(BaseHTTPRequestHandler):
         return bool(key) and hmac.compare_digest(given.encode(), key.encode())
 
     def do_GET(self):
+        if self.route == "/v1/mode":
+            # The app uses the PC's local model while it's in SERVER mode (Phase 10 mode.json).
+            if not self._authorized():
+                return self._json(401, {"error": "invalid API key"})
+            return self._json(200, read_mode())
         if self.route in ("/health", "/v1/health"):
             return self._json(200, {"status": "ok", "loaded": VOICE.model is not None,
                                     "loading": VOICE.loading, "voices": VOICE.voices(),

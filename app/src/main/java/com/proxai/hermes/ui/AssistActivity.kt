@@ -74,6 +74,7 @@ import androidx.core.content.ContextCompat
 import com.proxai.hermes.ProxApp
 import com.proxai.hermes.voice.MicState
 import com.proxai.hermes.voice.SpeechController
+import kotlinx.coroutines.launch
 
 /**
  * The power-button overlay: a bottom sheet over whatever you were doing. Starts listening
@@ -100,6 +101,8 @@ class AssistActivity : ComponentActivity() {
         setContent { ProxTheme { Overlay() } }
 
         if (app.settings.isConfigured && app.settings.speakReplies) speech.warmupVoice()
+        // Server mode? (decides local vs cloud model); runs while you talk.
+        if (app.settings.isConfigured) app.scope.launch { app.pcMode.current() }
         if (app.settings.autoListen && app.settings.isConfigured) startListening()
     }
 
@@ -158,6 +161,8 @@ class AssistActivity : ComponentActivity() {
         val partial by speech.partial.collectAsState()
         val level by speech.level.collectAsState()
         val error by speech.error.collectAsState()
+        val pcMode by app.pcMode.state.collectAsState()
+        val queued by app.chat.queuedText.collectAsState()
         var typing by remember { mutableStateOf(false) }
         var text by remember { mutableStateOf("") }
 
@@ -190,7 +195,11 @@ class AssistActivity : ComponentActivity() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AppIconBadge("Hermes", 28.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text("Hermes", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text("Hermes", fontWeight = FontWeight.SemiBold)
+                            if (app.settings.isConfigured) Text(routeLine(pcMode), maxLines = 1,
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         IconButton(onClick = ::openChat) { Icon(Icons.Outlined.OpenInFull, "Open in app") }
                         IconButton(onClick = { finish() }) { Icon(Icons.Outlined.Close, "Close") }
                     }
@@ -226,9 +235,14 @@ class AssistActivity : ComponentActivity() {
                         }
                     }
 
+                    val pauseSec = app.settings.sendPauseMs / 1000.0
                     val caption = when {
                         error != null && mic == MicState.Idle -> error!!
-                        mic == MicState.Listening -> partial.ifEmpty { "Listening…" }
+                        mic == MicState.Listening -> partial.ifEmpty {
+                            if (app.settings.sendPauseMs == 0L) "Listening… tap Send when you're done"
+                            else "Listening… (sends after ${"%.1f".format(pauseSec).removeSuffix(".0")} s of quiet)"
+                        }
+                        queued != null -> "Got it. I'll send that when Hermes finishes."
                         mic == MicState.Thinking || busy -> "Hermes is working…"
                         mic == MicState.Preparing -> "Ye is getting his voice ready…"
                         mic == MicState.Speaking -> "Speaking — tap the orb to interrupt"
@@ -258,14 +272,17 @@ class AssistActivity : ComponentActivity() {
                         IconButton(onClick = { typing = !typing; if (typing) speech.cancelListening() }) {
                             Icon(Icons.Outlined.Keyboard, "Type instead")
                         }
-                        MicOrb(mic, level, busy) {
+                        MicOrb(mic, level, busy && mic != MicState.Listening) {
                             when {
+                                mic == MicState.Listening -> speech.finishNow()
                                 busy -> app.chat.cancel()
-                                mic == MicState.Listening -> speech.stopListening()
                                 else -> { typing = false; startListening() }
                             }
                         }
-                        Spacer(Modifier.size(48.dp))
+                        if (mic == MicState.Listening) {
+                            // Send now, without waiting for the pause.
+                            IconButton(onClick = { speech.finishNow() }) { Icon(Icons.AutoMirrored.Filled.Send, "Send now") }
+                        } else Spacer(Modifier.size(48.dp))
                     }
                 }
             }

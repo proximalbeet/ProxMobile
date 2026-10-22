@@ -23,7 +23,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.outlined.UnfoldLess
+import com.proxai.hermes.data.PcMode
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.Close
@@ -64,6 +67,18 @@ val APP_IDEAS = listOf(
     "Make a flashcard app that uses ProxAI.ask to quiz me",
 )
 
+/** "local qwen3.5:35b-a3b (server mode)" / "cloud (personal mode)" for the headers. */
+fun routeLine(mode: PcMode?): String {
+    val route = ProxApp.instance.chat.currentRoute()
+    val m = when (mode?.mode) {
+        null -> ""
+        "server", "personal" -> " (${mode.mode} mode)"
+        "offline" -> " (PC unreachable)"
+        else -> ""
+    }
+    return (if (route.local) "local ${route.model}" else "cloud") + m
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
@@ -98,6 +113,10 @@ fun ChatScreen(
         onClearRemix()
     }
 
+    val mode by app.pcMode.state.collectAsState()
+    LaunchedEffect(Unit) { app.pcMode.current() }
+    val stats = remember(messages) { com.proxai.hermes.data.ChatRepository.stats(messages) }
+
     val last = messages.lastOrNull()
     LaunchedEffect(messages.size, last?.text?.length, last?.tools?.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1, Int.MAX_VALUE / 2)
@@ -108,11 +127,21 @@ fun ChatScreen(
             title = {
                 Column {
                     Text("Hermes", fontWeight = FontWeight.SemiBold)
-                    Text(if (app.settings.isConfigured) "proxai · ${if (busy) "working…" else "ready"}" else "not connected — open Settings",
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (app.settings.isConfigured) "proxai · ${if (busy) "working…" else "ready"} · ${routeLine(mode)}"
+                        else "not connected — open Settings",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1)
+                    if (stats.lastPromptTokens > 0) {
+                        val cost = if (stats.costUsd > 0) " · this session ≤ $" + "%.2f".format(stats.costUsd) else ""
+                        Text("context ${formatTokens(stats.lastPromptTokens)}$cost",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             },
             actions = {
+                IconButton(onClick = { repo.compact() }, enabled = !busy && stats.lastPromptTokens > 0) {
+                    Icon(Icons.Outlined.UnfoldLess, "Compact the conversation")
+                }
                 IconButton(onClick = { repo.newChat() }) { Icon(Icons.Outlined.AddComment, "New chat") }
             },
         )
@@ -173,7 +202,10 @@ fun ChatScreen(
                     modifier = Modifier.size(52.dp),
                     colors = if (mic == MicState.Listening) IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     else IconButtonDefaults.filledIconButtonColors(),
-                ) { Icon(Icons.Filled.Mic, "Speak") }
+                ) {
+                    if (mic == MicState.Listening) Icon(Icons.Filled.Check, "Done talking")
+                    else Icon(Icons.Filled.Mic, "Speak")
+                }
             } else {
                 FilledIconButton(onClick = { send() }, modifier = Modifier.size(52.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")

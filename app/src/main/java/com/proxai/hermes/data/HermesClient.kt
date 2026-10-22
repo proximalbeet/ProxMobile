@@ -16,10 +16,13 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+/** Token counts Hermes reports for one reply (all model calls of the turn added up). */
+data class Usage(val promptTokens: Int, val completionTokens: Int)
+
 sealed interface StreamEvent {
     data class Delta(val text: String) : StreamEvent
     data class Tool(val id: String, val label: String, val emoji: String, val running: Boolean) : StreamEvent
-    data class Done(val sessionId: String?) : StreamEvent
+    data class Done(val sessionId: String?, val usage: Usage? = null, val model: String? = null) : StreamEvent
     data class Error(val message: String) : StreamEvent
 }
 
@@ -38,7 +41,7 @@ class HermesClient(private val settings: HermesConfig) {
 
     private val baseUrl: String get() = settings.baseUrl
 
-    fun stream(system: String?, user: String, sessionId: String): Flow<StreamEvent> = callbackFlow {
+    fun stream(system: String?, user: String, sessionId: String, route: ModelRoute? = null): Flow<StreamEvent> = callbackFlow {
         if (!settings.isConfigured) {
             trySend(StreamEvent.Error("Set your Hermes server URL and API key in Settings."))
             close(); return@callbackFlow
@@ -47,7 +50,10 @@ class HermesClient(private val settings: HermesConfig) {
         if (!system.isNullOrBlank()) messages.put(JSONObject().put("role", "system").put("content", system))
         messages.put(JSONObject().put("role", "user").put("content", user))
         val body = JSONObject().put("stream", true).put("messages", messages)
-        if (settings.model.isNotBlank()) body.put("model", settings.model)
+        val r = route ?: ModelRoute(settings.model, "", local = false)
+        if (r.model.isNotBlank()) body.put("model", r.model)
+        // An explicit provider makes Hermes honor the model (a bare model name is ignored).
+        if (r.provider.isNotBlank()) body.put("provider", r.provider)
 
         val request = Request.Builder()
             .url("$baseUrl/v1/chat/completions")
@@ -68,6 +74,8 @@ class HermesClient(private val settings: HermesConfig) {
                     val source = resp.body!!.source()
                     var event: String? = null
                     val data = StringBuilder()
+                    var usage: Usage? = null
+                    var model: String? = null
 
                     suspend fun dispatch() {
                         val payload = data.toString()
@@ -76,6 +84,10 @@ class HermesClient(private val settings: HermesConfig) {
                         data.clear()
                         if (payload.isBlank() || payload == "[DONE]") return
                         val json = runCatching { JSONObject(payload) }.getOrNull() ?: return
+                        json.optJSONObject("usage")?.let {
+                            usage = Usage(it.optInt("prompt_tokens"), it.optInt("completion_tokens"))
+                        }
+                        json.optString("model").takeIf { it.isNotBlank() }?.let { model = it }
                         if (ev == "hermes.tool.progress") {
                             send(StreamEvent.Tool(
                                 id = json.optString("toolCallId"),
@@ -106,7 +118,7 @@ class HermesClient(private val settings: HermesConfig) {
                         }
                     }
                     if (data.isNotEmpty()) dispatch()
-                    send(StreamEvent.Done(resp.header("X-Hermes-Session-Id")))
+                    send(StreamEvent.Done(resp.header("X-Hermes-Session-Id"), usage, model))
                 }
             } catch (e: IOException) {
                 if (!call.isCanceled()) trySend(StreamEvent.Error(friendly(e)))
@@ -117,10 +129,10 @@ class HermesClient(private val settings: HermesConfig) {
     }
 
     /** One-shot question (used by generated apps through window.ProxAI.ask). */
-    suspend fun ask(prompt: String, sessionId: String, system: String? = null): String {
+    suspend fun ask(prompt: String, sessionId: String, system: String? = null, route: ModelRoute? = null): String {
         val out = StringBuilder()
         var error: String? = null
-        stream(system, prompt, sessionId).collect {
+        stream(system, prompt, sessionId, route).collect {
             when (it) {
                 is StreamEvent.Delta -> out.append(it.text)
                 is StreamEvent.Error -> error = it.message

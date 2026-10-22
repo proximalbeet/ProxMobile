@@ -15,6 +15,33 @@ An Android front end for the **proxai** Hermes Agent profile:
 - Generated apps can call back into Hermes through a small JS bridge:
   `await ProxAI.ask(prompt)`, `ProxAI.speak(text)`, `ProxAI.toast(text)`, `ProxAI.vibrate(ms)`.
 
+### New in 0.3.0 (2026-10-22)
+
+- **Speech input fixes.** Short pauses no longer send half a sentence: the app keeps listening,
+  joins the pieces, and sends after a quiet pause you pick (Settings → Speech input: right away,
+  1.5 s, 3 s (default), 5 s, or only when you tap **Send**). A Send button shows while you talk.
+  The recognizer is rebuilt on every mic tap and after any error (it could go dead until the
+  phone restarted), falls back to the on-device recognizer after repeated failures, and every
+  error is shown and kept in Settings → **Show speech log**. Mishearing: a "words to expect" list
+  (recognizer hints, Android 13+), "heard => meant" phrase fixes, and Hermes is told voice text
+  may be misheard. Speaking while Hermes is still answering queues the message instead of
+  dropping it.
+- **Local model in server mode.** Settings → Model: **Auto** (default) uses the PC's local model
+  (`qwen3.5:35b-a3b`, provider `prox-ai`) while StormTrooper is in SERVER mode and the cloud
+  model otherwise; or force **Cloud** / **Local**. The mode comes from the voice server
+  (`/voice/v1/mode`, or `/voice/health` on older servers: server mode keeps the voice loaded for a
+  year; personal mode turns it off). No Hermes change: an explicit `provider` makes the API
+  server honor the requested model.
+- **Reminders and notifications.** "Remind me in 20 minutes to…" → Hermes adds a
+  `[[remind: 2026-10-22T17:30 | text]]` tag, the app hides it and sets an exact alarm that posts a
+  notification (Snooze 10 min / Done), kept across reboots. Upcoming reminders are listed in
+  Settings. A notification also shows when Hermes finishes a reply while the app is closed.
+- **Context size, cost and auto-compact.** Each reply shows the model and tokens read; the chat
+  header shows the context size and an upper-bound cost for the session. When one reply reads
+  more than 60k tokens (40k/100k/off), the app asks Hermes for a summary and continues in a fresh
+  session that starts from it; there's also a **Compact** button. **New chat** starts a fully
+  fresh Hermes session.
+
 ```
  phone                                         desktop (CachyOS)
 ┌─────────────────────────┐   Tailscale    ┌──────────────────────────────────┐
@@ -48,7 +75,7 @@ the proxai `.env` and a gateway restart. That's why `tailscale serve` is recomme
 ### 2. Phone
 
 1. Install Tailscale on the phone and sign in to the same tailnet.
-2. Install `ProxAI-0.1.0.apk` (copy it over, or `adb install -r ProxAI-0.1.0.apk`).
+2. Install the latest `ProxAI-<version>.apk` (Taildrop: `tailscale file cp ProxAI-0.3.0.apk nathans-s26:`, or `adb install -r`).
 3. Connect the app. Easiest: run `./scripts/phone-qr.sh` on the PC, scan the QR code with the
    phone camera, open it in ProxAI and tap **Connect**, then **Save & test**. Or type the server
    URL and the proxai **API_SERVER_KEY** into **Settings** yourself. The key is the `.env` value
@@ -112,7 +139,12 @@ before giving it to anyone else.
 | `assist/AssistServices.kt` | VoiceInteractionService/Session (power button), stub recognizer, QS tile |
 | `ui/AssistActivity.kt` | the voice overlay |
 | `ui/AppRunnerActivity.kt` | WebView runner, per-app origin + `window.ProxAI` bridge |
-| `voice/SpeechController.kt` | speech-to-text and text-to-speech |
+| `voice/SpeechController.kt` | speech-to-text (joined phrases, recovery) and text-to-speech |
+| `voice/SpeechFixes.kt` | "heard => meant" fixes, recognizer vocabulary, speech log |
+| `data/PcMode.kt` | server/personal mode from the voice server, model route choice |
+| `data/Reminders.kt` | reminder tags, storage, alarms |
+| `notify/Notifier.kt` | notification channels, reminder + reply notifications, boot receiver |
+| `ui/SettingsSections.kt` | Speech input, Model, Notifications, Context settings |
 
 ## Security notes
 

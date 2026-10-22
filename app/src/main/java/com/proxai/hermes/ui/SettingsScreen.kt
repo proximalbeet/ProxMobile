@@ -171,6 +171,11 @@ fun SettingsScreen() {
             Toggle("Start listening when the assistant opens", autoListen) { autoListen = it; s.autoListen = it }
             Toggle("Hands-free: keep listening after each reply", handsFree) { handsFree = it; s.handsFree = it }
 
+            SpeechInputSection()
+            ModelSection()
+            NotificationsSection()
+            ContextSection()
+
             Spacer(Modifier.height(8.dp))
             Text("Session: ${s.sessionId}", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

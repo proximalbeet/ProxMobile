@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (!ProxApp.instance.settings.isConfigured) tab = 2
         handle(intent)
+        askForNotificationsOnce()
 
         setContent {
             ProxTheme {
@@ -102,6 +103,20 @@ class MainActivity : ComponentActivity() {
         }
         intent?.getStringExtra(EXTRA_REMIX)?.let { remix(it) }
         if (intent?.getBooleanExtra(EXTRA_CHAT, false) == true) tab = 0
+    }
+
+    private val notificationPermission =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+
+    /** v0.3 reminders need notifications; ask once (Settings has a button after that). */
+    private fun askForNotificationsOnce() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        val prefs = getSharedPreferences("proxai", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun openApp(id: String) = startActivity(AppRunnerActivity.intent(this, id))

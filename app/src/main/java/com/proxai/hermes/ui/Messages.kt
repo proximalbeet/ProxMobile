@@ -123,6 +123,7 @@ fun MessageBubble(
     onOpenApp: (String) -> Unit,
     onRemixApp: (String) -> Unit,
 ) {
+    if (msg.role == "note") { NoteCard(msg); return }
     val isUser = msg.role == "user"
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
@@ -158,9 +159,45 @@ fun MessageBubble(
                 msg.error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
+                msg.reminders.forEach { r ->
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(12.dp)) {
+                        Text("⏰ $r", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                }
+                if (!isUser && !msg.streaming && msg.model != null) {
+                    val tokens = if (msg.promptTokens > 0) " · ${formatTokens(msg.promptTokens)} in" else ""
+                    Text("${msg.model}$tokens", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                }
             }
         }
     }
+}
+
+/** App notices in the chat, e.g. "conversation compacted" with the summary. */
+@Composable
+fun NoteCard(msg: ChatMessage) {
+    var open by remember { mutableStateOf(false) }
+    val first = msg.text.substringBefore("\n\n")
+    val rest = msg.text.substringAfter("\n\n", "")
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(first, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            if (msg.streaming) TypingDots()
+            if (rest.isNotBlank()) {
+                TextButton(onClick = { open = !open }) { Text(if (open) "Hide summary" else "Show summary") }
+                if (open) SelectionContainer { Text(rest, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+}
+
+fun formatTokens(n: Number): String {
+    val v = n.toLong()
+    return if (v >= 1000) "${(v + 500) / 1000}k tokens" else "$v tokens"
 }
 
 @Composable
