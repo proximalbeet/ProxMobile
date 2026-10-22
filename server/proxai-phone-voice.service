@@ -1,20 +1,20 @@
 [Unit]
 Description=ProxMobile Kanye voice (Chatterbox TTS for the ProxAI phone app)
 Documentation=file://%h/dev/projects/ProxMobile/README.md
-After=network-online.target
+# Started on demand by proxai-phone-voice.socket; exits by itself after PROXAI_VOICE_IDLE seconds.
+Requires=proxai-phone-voice.socket
+After=proxai-phone-voice.socket network-online.target
 
 [Service]
 Type=simple
 # Hermes's own Chatterbox venv and voice script; this service adds no new packages.
 ExecStart=%h/.hermes/profiles/proxai/voice/.venv-chatterbox/bin/python %h/dev/projects/ProxMobile/server/kanye_voice_server.py
-# Drop the model (~3.4 GB VRAM) after 5 idle minutes so Ollama gets the GPU back.
+# Exit after 5 idle minutes so the VRAM (~3.4 GB, for Ollama) and RAM are both freed.
 Environment=PROXAI_VOICE_IDLE=300
 Environment=PYTHONUNBUFFERED=1
 # Hide Chatterbox's per-sentence progress bars so the journal has one line per reply piece.
 Environment=TQDM_DISABLE=1
+# The idle exit is a clean exit (code 0), so this only restarts after a crash.
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
-
-[Install]
-WantedBy=default.target

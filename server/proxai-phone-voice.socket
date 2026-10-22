@@ -1,0 +1,11 @@
+[Unit]
+Description=ProxMobile Kanye voice socket (starts the voice server on the first request)
+Documentation=file://%h/dev/projects/ProxMobile/README.md
+
+[Socket]
+# systemd holds the port; requests that arrive while the server is stopped wait here until it starts.
+ListenStream=127.0.0.1:8653
+Backlog=64
+
+[Install]
+WantedBy=sockets.target

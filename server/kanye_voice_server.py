@@ -6,8 +6,9 @@ Discord. It reuses Hermes's own voice script (tts_pipeline.py: reference clip, d
 Ollama unloading), so the voice is identical.
 
 Unlike Hermes's one-shot command, the model stays loaded between replies (about 1 s per sentence
-instead of about 8 s cold) and is dropped after PROXAI_VOICE_IDLE seconds idle, giving the
-~3.4 GB of VRAM back to Ollama.
+instead of about 8 s cold). After PROXAI_VOICE_IDLE seconds idle the whole process exits, which
+gives back both the ~3.4 GB of VRAM (to Ollama) and the RAM PyTorch keeps after a model unload.
+systemd holds the port (proxai-phone-voice.socket) and starts this again on the next request.
 
 Runs with Hermes's Chatterbox venv, listening on 127.0.0.1 only; Tailscale Serve publishes it at
 https://<desktop>.ts.net/voice. Requests need the proxai API_SERVER_KEY as a Bearer token.
@@ -18,12 +19,12 @@ https://<desktop>.ts.net/voice. Requests need the proxai API_SERVER_KEY as a Bea
 """
 from __future__ import annotations
 
-import gc
 import hmac
 import io
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -125,17 +126,10 @@ class Voice:
             self.last_used = time.monotonic()
             return buf.getvalue(), len(audio) / self.model.sr
 
-    def unload_if_idle(self):
-        if self.model is None or time.monotonic() - self.last_used < IDLE_SECONDS:
-            return
+    def is_idle(self) -> bool:
+        # Holding the lock means no generation or model load is running right now.
         with self.lock:
-            if self.model is None or time.monotonic() - self.last_used < IDLE_SECONDS:
-                return
-            import torch
-            self.model, self.prepared_voice = None, None
-            gc.collect()
-            torch.cuda.empty_cache()
-            log(f"idle {IDLE_SECONDS}s, model unloaded (VRAM freed)")
+            return not self.loading and time.monotonic() - self.last_used >= IDLE_SECONDS
 
     def voices(self) -> list[str]:
         """Voices the phone may ask for: the allow-list, if its reference clip exists."""
@@ -175,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.route in ("/health", "/v1/health"):
             return self._json(200, {"status": "ok", "loaded": VOICE.model is not None,
                                     "loading": VOICE.loading, "voices": VOICE.voices(),
-                                    "idle_unload_seconds": IDLE_SECONDS})
+                                    "idle_exit_seconds": IDLE_SECONDS})
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -217,22 +211,35 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(wav)
 
 
-def idle_watcher():
-    while True:
+def idle_watcher(server: ThreadingHTTPServer):
+    while not VOICE.is_idle():
         time.sleep(15)
-        try:
-            VOICE.unload_if_idle()
-        except Exception as exc:
-            log(f"idle unload failed: {exc!r}")
+    log(f"idle {IDLE_SECONDS}s, exiting (frees VRAM and RAM; the next request starts it again)")
+    server.shutdown()  # stop accepting; new connections wait in systemd's socket
+
+
+def make_server() -> tuple[ThreadingHTTPServer, str]:
+    """Use the socket systemd passes in (socket activation), or bind one when run by hand."""
+    if os.getenv("LISTEN_PID") == str(os.getpid()) and os.getenv("LISTEN_FDS") == "1":
+        server = ThreadingHTTPServer((HOST, PORT), Handler, bind_and_activate=False)
+        server.socket.close()
+        server.socket = socket.socket(fileno=3)
+        host, port = server.socket.getsockname()[:2]
+        server.server_name, server.server_port = host, port
+        return server, f"http://{host}:{port} (socket from systemd)"
+    return ThreadingHTTPServer((HOST, PORT), Handler), f"http://{HOST}:{PORT}"
 
 
 def main():
     if not KEY.get():
         sys.exit(f"No API_SERVER_KEY in {ENV_FILE}")
-    threading.Thread(target=idle_watcher, daemon=True).start()
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    log(f"Kanye voice listening on http://{HOST}:{PORT} (voices: {', '.join(VOICE.voices())})")
+    server, where = make_server()
+    # Track handler threads so server_close() lets in-flight replies finish before exiting.
+    server.daemon_threads = False
+    threading.Thread(target=idle_watcher, args=(server,), daemon=True).start()
+    log(f"Kanye voice listening on {where} (voices: {', '.join(VOICE.voices())})")
     server.serve_forever()
+    server.server_close()
 
 
 if __name__ == "__main__":

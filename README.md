@@ -73,15 +73,17 @@ identical. Hermes's config and voice script are not modified.
 
 - Listens on `127.0.0.1:8653`. Tailscale Serve publishes it at `https://<desktop>.ts.net/voice`
   (tailnet only). Requests need the proxai `API_SERVER_KEY`.
-- The model stays loaded between replies (about 1–1.5 s per sentence) and is dropped after 5 idle
-  minutes, giving its ~3.4 GB of VRAM back to Ollama. A cold start takes about 9 s; the app hides
-  most of it by asking the PC to warm up the moment the power-button overlay opens.
+- It only runs while you're using it. systemd holds the port (`proxai-phone-voice.socket`) and
+  starts the server on the first request. The model then stays loaded between replies (about
+  1–1.5 s per sentence), and after 5 idle minutes the server exits, giving back its ~3.4 GB of
+  VRAM (to Ollama) and its RAM. A cold start takes about 9 s; the app hides most of it by asking
+  the PC to warm up the moment the power-button overlay opens.
 - The app plays a reply sentence by sentence, fetching the next sentence while the current one
   plays. If the PC can't be reached it says so and uses the phone's voice. Switch it off in
   Settings → Voice → **Kanye voice**, and use **Test voice** to hear it.
 
 ```bash
-./scripts/install-voice-service.sh          # install + start; starts at boot from then on
+./scripts/install-voice-service.sh          # install; listens from boot on, starts on demand
 ./scripts/install-voice-service.sh remove   # uninstall
 journalctl --user -u proxai-phone-voice -f  # logs: one line per spoken piece
 ```
