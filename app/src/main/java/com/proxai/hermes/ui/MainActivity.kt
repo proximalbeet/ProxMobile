@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
     private var draft by mutableStateOf("")
     private var pendingConnect by mutableStateOf<Pair<String, String>?>(null)
     private var settingsVersion by mutableIntStateOf(0)
+    private var showWhatsNew by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,12 +43,16 @@ class MainActivity : ComponentActivity() {
         if (!ProxApp.instance.settings.isConfigured) tab = 2
         handle(intent)
         askForNotificationsOnce()
+        // Once after each update: the list of changes, so it can be checked on the phone.
+        if (savedInstanceState == null && ProxApp.instance.settings.isConfigured && Changelog.shouldShow(this)) showWhatsNew = true
 
         setContent {
             ProxTheme {
                 Scaffold(
+                    modifier = Modifier.background(ScreenGlow),
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
                     bottomBar = {
-                        NavigationBar {
+                        NavigationBar(containerColor = androidx.compose.ui.graphics.Color(0xF20D121B)) {
                             NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Outlined.ChatBubbleOutline, null) }, label = { Text("Chat") })
                             NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Outlined.Widgets, null) }, label = { Text("Apps") })
                             NavigationBarItem(tab == 2, { tab = 2 }, { Icon(Icons.Outlined.Settings, null) }, label = { Text("Settings") })
@@ -65,11 +71,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                if (showWhatsNew) WhatsNewDialog { showWhatsNew = false }
                 pendingConnect?.let { (url, key) ->
                     // Always confirm: a link from anywhere could otherwise repoint the app.
                     AlertDialog(
                         onDismissRequest = { pendingConnect = null },
-                        title = { Text("Connect to Hermes?") },
+                        title = { Text("Connect to ProxAI?") },
                         text = { Text("Use this server for ProxAI?\n\n$url") },
                         confirmButton = {
                             TextButton(onClick = {

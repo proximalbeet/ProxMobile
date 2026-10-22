@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">ProxAI</string>
-    <string name="tile_label">Ask Hermes</string>
+    <string name="tile_label">Ask ProxAI</string>
 </resources>

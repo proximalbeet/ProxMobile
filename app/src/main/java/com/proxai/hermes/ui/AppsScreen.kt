@@ -70,13 +70,13 @@ fun AppsScreen(onOpenApp: (String) -> Unit, onRemixApp: (String) -> Unit, onBuil
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TopAppBar(title = { Text("Your apps", fontWeight = FontWeight.SemiBold) })
+            TopAppBar(colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent), title = { Text("Your apps", fontWeight = FontWeight.SemiBold) })
             if (apps.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No apps yet", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
-                    Text("Ask Hermes to build one — e.g. “make me a habit tracker”. It's saved here automatically, and you can pin it to your home screen.",
+                    Text("Ask ProxAI to build one — e.g. “make me a habit tracker”. It's saved here automatically, and you can pin it to your home screen.",
                         textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(16.dp))
                     APP_IDEAS.drop(2).take(3).forEach { idea ->
@@ -141,7 +141,7 @@ private fun AppRow(a: GeneratedApp, onOpen: () -> Unit, onRemix: () -> Unit, onP
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Open") }, onClick = { menu = false; onOpen() })
-                    DropdownMenuItem(text = { Text("Remix with Hermes") }, onClick = { menu = false; onRemix() })
+                    DropdownMenuItem(text = { Text("Remix with ProxAI") }, onClick = { menu = false; onRemix() })
                     DropdownMenuItem(text = { Text("Add to home screen") }, onClick = { menu = false; onPin() })
                     DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })

@@ -91,7 +91,7 @@ fun SpeechInputSection() {
         else "Needs Android 13+ for recognizer hints; the fixes below still apply.")
     OutlinedTextField(fixes, { fixes = it; s.wordFixes = it }, Modifier.fillMaxWidth(),
         label = { Text("Fixes: heard => meant (one per line)") }, minLines = 3, maxLines = 8)
-    Hint("Applied to what the phone heard before it's sent, e.g. \"crime job => cron job\". Hermes is also " +
+    Hint("Applied to what the phone heard before it's sent, e.g. \"crime job => cron job\". ProxAI is also " +
         "told voice text can be misheard and to go by context.")
     TextButton(onClick = { showLog = !showLog }) { Text(if (showLog) "Hide speech log" else "Show speech log") }
     if (showLog) {
@@ -136,7 +136,7 @@ fun ModelSection() {
     OutlinedTextField(localModel, { localModel = it; s.localModel = it }, Modifier.fillMaxWidth(),
         label = { Text("Local model") }, singleLine = true)
     OutlinedTextField(provider, { provider = it; s.localProvider = it }, Modifier.fillMaxWidth(),
-        label = { Text("Local provider (Hermes custom provider name)") }, singleLine = true)
+        label = { Text("Local provider (custom provider name on the PC)") }, singleLine = true)
 }
 
 @Composable
@@ -167,10 +167,10 @@ fun NotificationsSection() {
         }) { Text("Allow notifications") }
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Notify me when Hermes replies while the app is closed", Modifier.weight(1f))
+        Text("Notify me when ProxAI replies while the app is closed", Modifier.weight(1f))
         Switch(replies, { replies = it; s.replyNotifications = it })
     }
-    Hint("Reminders: say \"remind me at 5 to call Mom\" or \"in 20 minutes, check the oven\". Hermes sets them " +
+    Hint("Reminders: say \"remind me at 5 to call Mom\" or \"in 20 minutes, check the oven\". ProxAI sets them " +
         "on the phone, and they work offline once set.")
     if (reminders.isEmpty()) Text("No reminders set.", style = MaterialTheme.typography.bodyMedium)
     reminders.forEach { r ->
@@ -193,9 +193,9 @@ fun ContextSection() {
     Heading("Context and cost")
     Text("Auto-compact when one reply reads more than")
     Choices(listOf("40k" to 40_000, "60k" to 60_000, "100k" to 100_000, "Off" to 0), limit) { limit = it; s.compactAtTokens = it }
-    Hint("Hermes resends the whole conversation every turn, so long chats get expensive. Compacting asks Hermes " +
+    Hint("ProxAI resends the whole conversation every turn, so long chats get expensive. Compacting asks ProxAI " +
         "for a short summary and continues in a fresh session that starts from it. A fresh session already " +
-        "reads about 20k tokens (Hermes's instructions and tools). The chat header shows the size and a cost " +
+        "reads about 20k tokens (ProxAI's instructions and tools). The chat header shows the size and a cost " +
         "estimate; \"New chat\" starts a completely fresh session.")
     OutlinedButton(onClick = { app.chat.compact() }) { Text("Compact now") }
 }

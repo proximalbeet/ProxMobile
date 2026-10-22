@@ -194,10 +194,10 @@ class AssistActivity : ComponentActivity() {
             ) {
                 Column(Modifier.navigationBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AppIconBadge("Hermes", 28.dp)
+                        ProxLogo(30.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Hermes", fontWeight = FontWeight.SemiBold)
+                            Text("ProxAI", fontWeight = FontWeight.SemiBold)
                             if (app.settings.isConfigured) Text(routeLine(pcMode), maxLines = 1,
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -206,7 +206,7 @@ class AssistActivity : ComponentActivity() {
                     }
 
                     if (!app.settings.isConfigured) {
-                        Text("Connect ProxAI to your Hermes server first.", Modifier.padding(16.dp))
+                        Text("Connect ProxAI to your PC first (Settings).", Modifier.padding(16.dp))
                         Button(onClick = ::openChat) { Text("Open settings") }
                         return@Column
                     }
@@ -243,9 +243,9 @@ class AssistActivity : ComponentActivity() {
                             if (app.settings.sendPauseMs == 0L) "Listening… tap Send when you're done"
                             else "Listening… (sends after ${"%.1f".format(pauseSec).removeSuffix(".0")} s of quiet)"
                         }
-                        queued != null -> "Got it. I'll send that when Hermes finishes."
+                        queued != null -> "Got it. I'll send that when ProxAI finishes."
                         mic == MicState.Thinking || busy ->
-                            if (visible.lastOrNull()?.thinking == true) "Hermes is thinking…" else "Hermes is working…"
+                            if (visible.lastOrNull()?.thinking == true) "ProxAI is thinking…" else "ProxAI is working…"
                         mic == MicState.Preparing -> "Ye is getting his voice ready…"
                         mic == MicState.Speaking -> "Speaking — tap the orb to interrupt"
                         visible.isEmpty() -> "Tap to talk"
@@ -259,7 +259,7 @@ class AssistActivity : ComponentActivity() {
 
                     if (typing) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(text, { text = it }, Modifier.weight(1f), placeholder = { Text("Type to Hermes") },
+                            OutlinedTextField(text, { text = it }, Modifier.weight(1f), placeholder = { Text("Type to ProxAI") },
                                 shape = RoundedCornerShape(24.dp), maxLines = 4,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                 keyboardActions = KeyboardActions(onSend = { app.chat.send(text, fromVoice = false); text = "" }))
@@ -307,13 +307,15 @@ private fun MicOrb(state: MicState, level: Float, busy: Boolean, onClick: () -> 
         else -> 1f
     }
     val colors = when {
-        state == MicState.Listening -> listOf(Mint, Color(0xFF3FA796))
-        busy -> listOf(Brand, BrandDeep)
-        state == MicState.Speaking || state == MicState.Preparing -> listOf(Color(0xFFC9BCFF), Brand)
-        else -> listOf(Brand, BrandDeep)
+        state == MicState.Listening -> listOf(Color(0xFF8FF3FF), BrandCyan, Brand)
+        busy -> listOf(BrandCyan, Brand, BrandDeep)
+        state == MicState.Speaking || state == MicState.Preparing -> listOf(Color(0xFFBFE3FF), Brand, BrandDeep)
+        else -> listOf(BrandCyan, Brand, BrandDeep)
     }
-    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(84.dp).scale(scale * 1.12f).clip(CircleShape).background(colors[0].copy(alpha = 0.18f)))
+    Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+        // Blue glow around the orb (a radial fade, works on every Android version).
+        Box(Modifier.size(112.dp).scale(scale).clip(CircleShape)
+            .background(Brush.radialGradient(listOf(colors[1].copy(alpha = 0.45f), colors[1].copy(alpha = 0.12f), Color.Transparent))))
         Box(Modifier.size(72.dp).scale(scale).clip(CircleShape).background(Brush.linearGradient(colors)).clickable(onClick = onClick),
             contentAlignment = Alignment.Center) {
             Icon(if (busy) Icons.Filled.Stop else Icons.Filled.Mic, if (busy) "Stop" else "Talk",

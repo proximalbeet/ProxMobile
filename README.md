@@ -15,6 +15,16 @@ An Android front end for the **proxai** Hermes Agent profile:
 - Generated apps can call back into Hermes through a small JS bridge:
   `await ProxAI.ask(prompt)`, `ProxAI.speak(text)`, `ProxAI.toast(text)`, `ProxAI.vibrate(ms)`.
 
+### New in 0.3.1 (2026-10-22)
+
+- Glowing blue look (was purple), named **ProxAI** everywhere (was Hermes), new "P + spark" logo.
+- "thinking…" / "still working…" while a reply is on its way (the local model's reasoning used to
+  look like a frozen blank line).
+- Hands-free: no error after a reply (waits for the mic, retries a busy recognizer; silence ends
+  quietly).
+- **What's new** list in the app (pops up once after an update; Settings → What's new), kept in
+  `ui/WhatsNew.kt`. Add each release's changes there.
+
 ### New in 0.3.0 (2026-10-22)
 
 - **Speech input fixes.** Short pauses no longer send half a sentence: the app keeps listening,

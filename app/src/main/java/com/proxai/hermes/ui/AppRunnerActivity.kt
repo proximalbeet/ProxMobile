@@ -97,7 +97,7 @@ class AppRunnerActivity : ComponentActivity() {
                             Text(meta.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f))
                             IconButton(onClick = { web?.let { load(it, meta.id) } }) { Icon(Icons.Outlined.Refresh, "Reload") }
-                            IconButton(onClick = ::remix) { Icon(Icons.Outlined.AutoFixHigh, "Remix with Hermes") }
+                            IconButton(onClick = ::remix) { Icon(Icons.Outlined.AutoFixHigh, "Remix with ProxAI") }
                             Box {
                                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
                                 DropdownMenu(menu, { menu = false }) {
@@ -184,7 +184,7 @@ class AppRunnerActivity : ComponentActivity() {
                 }
                 val payload = JSONObject()
                 result.onSuccess { payload.put("ok", true).put("text", it) }
-                    .onFailure { payload.put("ok", false).put("error", it.message ?: "Hermes error") }
+                    .onFailure { payload.put("ok", false).put("error", it.message ?: "ProxAI error") }
                 web?.evaluateJavascript("window.__proxaiResolve(${JSONObject.quote(callId)}, $payload)", null)
             }
         }

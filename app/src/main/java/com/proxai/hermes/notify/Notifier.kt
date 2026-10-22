@@ -27,7 +27,7 @@ object Notifier {
         nm.createNotificationChannel(NotificationChannel(CH_REMINDERS, "Reminders", NotificationManager.IMPORTANCE_HIGH)
             .apply { description = "Reminders you asked ProxAI for" })
         nm.createNotificationChannel(NotificationChannel(CH_REPLIES, "Replies", NotificationManager.IMPORTANCE_DEFAULT)
-            .apply { description = "Hermes finished answering while the app was closed" })
+            .apply { description = "ProxAI finished answering while the app was closed" })
     }
 
     fun canPost(context: Context): Boolean =
@@ -46,7 +46,7 @@ object Notifier {
         if (!canPost(context) || text.isBlank()) return
         val n = NotificationCompat.Builder(context, CH_REPLIES)
             .setSmallIcon(R.drawable.ic_tile)
-            .setContentTitle("Hermes replied")
+            .setContentTitle("ProxAI replied")
             .setContentText(text.take(120))
             .setStyle(NotificationCompat.BigTextStyle().bigText(text.take(1000)))
             .setContentIntent(openChat(context, 0))

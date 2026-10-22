@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.outlined.UnfoldLess
 import com.proxai.hermes.data.PcMode
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.Close
@@ -124,17 +126,22 @@ fun ChatScreen(
 
     Column(Modifier.fillMaxSize().imePadding()) {
         TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             title = {
-                Column {
-                    Text("Hermes", fontWeight = FontWeight.SemiBold)
-                    Text(if (app.settings.isConfigured) "proxai · ${if (busy) "working…" else "ready"} · ${routeLine(mode)}"
-                        else "not connected — open Settings",
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1)
-                    if (stats.lastPromptTokens > 0) {
-                        val cost = if (stats.costUsd > 0) " · this session ≤ $" + "%.2f".format(stats.costUsd) else ""
-                        Text("context ${formatTokens(stats.lastPromptTokens)}$cost",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ProxLogo(34.dp)
+                    Spacer(Modifier.size(10.dp))
+                    Column {
+                        BrandTitle("ProxAI")
+                        Text(if (app.settings.isConfigured) "${if (busy) "working…" else "ready"} · ${routeLine(mode)}"
+                            else "not connected — open Settings",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1)
+                        if (stats.lastPromptTokens > 0) {
+                            val cost = if (stats.costUsd > 0) " · this session ≤ $" + "%.2f".format(stats.costUsd) else ""
+                            Text("context ${formatTokens(stats.lastPromptTokens)}$cost",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             },
@@ -150,7 +157,9 @@ fun ChatScreen(
             if (messages.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Ask Hermes anything", style = MaterialTheme.typography.headlineSmall)
+                    ProxLogo(76.dp)
+                    Spacer(Modifier.height(18.dp))
+                    Text("Ask ProxAI anything", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(6.dp))
                     Text("…or ask for an app and it lands in your Apps tab.\nHold the power button to talk hands-free.",
                         textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -186,7 +195,7 @@ fun ChatScreen(
                 value = if (mic == MicState.Listening && partial.isNotEmpty()) partial else input,
                 onValueChange = onInput,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text(if (mic == MicState.Listening) "Listening…" else "Message Hermes") },
+                placeholder = { Text(if (mic == MicState.Listening) "Listening…" else "Message ProxAI") },
                 shape = RoundedCornerShape(24.dp),
                 maxLines = 6,
             )

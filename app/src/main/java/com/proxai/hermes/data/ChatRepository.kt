@@ -206,7 +206,7 @@ class ChatRepository(
             summary.onSuccess { text ->
                 val clean = ReminderStore.strip(text).trim()
                 if (clean.isBlank()) {
-                    update(note.id) { it.copy(streaming = false, text = "Couldn't compact: Hermes sent an empty summary.") }
+                    update(note.id) { it.copy(streaming = false, text = "Couldn't compact: ProxAI sent an empty summary.") }
                 } else {
                     settings.newSession()
                     settings.carryOver = clean
@@ -215,7 +215,7 @@ class ChatRepository(
                     update(note.id) {
                         it.copy(streaming = false,
                             text = "$why Your next message starts a fresh, " +
-                                "cheaper Hermes session that gets this summary:\n\n$clean")
+                                "cheaper session that gets this summary:\n\n$clean")
                     }
                 }
             }.onFailure { e ->

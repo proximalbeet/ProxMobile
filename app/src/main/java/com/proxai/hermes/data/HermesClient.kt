@@ -45,7 +45,7 @@ class HermesClient(private val settings: HermesConfig) {
 
     fun stream(system: String?, user: String, sessionId: String, route: ModelRoute? = null): Flow<StreamEvent> = callbackFlow {
         if (!settings.isConfigured) {
-            trySend(StreamEvent.Error("Set your Hermes server URL and API key in Settings."))
+            trySend(StreamEvent.Error("Set your ProxAI server URL and API key in Settings."))
             close(); return@callbackFlow
         }
         val messages = JSONArray()
@@ -101,7 +101,7 @@ class HermesClient(private val settings: HermesConfig) {
                             return
                         }
                         json.optJSONObject("error")?.let {
-                            send(StreamEvent.Error(it.optString("message", "Hermes error")))
+                            send(StreamEvent.Error(it.optString("message", "ProxAI error")))
                             return
                         }
                         val delta = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
@@ -168,8 +168,8 @@ class HermesClient(private val settings: HermesConfig) {
                 Request.Builder().url("$baseUrl/v1/models")
                     .header("Authorization", "Bearer ${settings.apiKey}").build()
             ).execute().use {
-                if (it.code == 401 || it.code == 403) error("Reached Hermes, but the API key was rejected")
-                if (!it.isSuccessful) error("Reached Hermes, but /v1/models gave HTTP ${it.code}")
+                if (it.code == 401 || it.code == 403) error("Reached ProxAI, but the API key was rejected")
+                if (!it.isSuccessful) error("Reached ProxAI, but /v1/models gave HTTP ${it.code}")
             }
             "Connected to ${health.optString("platform", "hermes")} ${health.optString("version")}"
         }.recoverCatching { e -> throw IOException(if (e is IOException) friendly(e) else e.message, e) }
@@ -180,7 +180,7 @@ class HermesClient(private val settings: HermesConfig) {
         val msg = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }.getOrNull()
         return when (resp.code) {
             401, 403 -> "API key rejected (HTTP ${resp.code}). Check Settings."
-            else -> msg ?: "Hermes returned HTTP ${resp.code}"
+            else -> msg ?: "ProxAI returned HTTP ${resp.code}"
         }
     }
 
@@ -188,8 +188,8 @@ class HermesClient(private val settings: HermesConfig) {
         e.message?.contains("Unable to resolve host") == true ->
             "Can't find the server. Is Tailscale connected on this phone?"
         e.message?.contains("failed to connect") == true || e is java.net.ConnectException ->
-            "Can't reach Hermes. Is the PC on and Tailscale connected?"
-        e is java.net.SocketTimeoutException -> "Hermes took too long to answer."
+            "Can't reach ProxAI. Is the PC on and Tailscale connected?"
+        e is java.net.SocketTimeoutException -> "ProxAI took too long to answer."
         else -> e.message ?: "Network error"
     }
 

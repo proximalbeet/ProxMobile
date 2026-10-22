@@ -91,11 +91,13 @@ fun SettingsScreen() {
     fun save() { s.serverUrl = url; s.apiKey = key; s.model = model }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Settings", fontWeight = FontWeight.SemiBold) })
+        TopAppBar(colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent), title = { Text("Settings", fontWeight = FontWeight.SemiBold) })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-            Section("Hermes connection")
+            AboutCard()
+
+            Section("ProxAI server")
             OutlinedTextField(url, { url = it; status = null }, Modifier.fillMaxWidth(),
                 label = { Text("Server URL") }, singleLine = true,
                 placeholder = { Text("https://desktop.tail773dbb.ts.net") },
@@ -129,7 +131,7 @@ fun SettingsScreen() {
             Section("Power button")
             StepCard(
                 done = hasMic, title = "1. Allow the microphone",
-                body = "Needed for talking to Hermes.",
+                body = "Needed for talking to ProxAI.",
                 action = "Allow" to { micPermission.launch(Manifest.permission.RECORD_AUDIO) })
             StepCard(
                 done = isAssistant, title = "2. Make ProxAI your digital assistant",
@@ -145,7 +147,7 @@ fun SettingsScreen() {
                 done = false, title = "3. Set the power button to the assistant",
                 body = "Pixel: Settings → System → Gestures → Press & hold power button → Digital assistant.\n" +
                     "Samsung: Settings → Advanced features → Side button → Press and hold — choose the digital assistant if your One UI version offers it.\n" +
-                    "No option on your phone? Add the “Ask Hermes” Quick Settings tile instead.",
+                    "No option on your phone? Add the “Ask ProxAI” Quick Settings tile instead.",
                 action = null)
 
             Section("Voice")
