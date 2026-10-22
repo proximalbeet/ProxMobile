@@ -155,7 +155,7 @@ fun MessageBubble(
                         }
                     }
                 }
-                if (msg.streaming && msg.text.isEmpty()) TypingDots()
+                if (msg.streaming && (msg.text.isEmpty() || msg.thinking)) WorkingLine(msg)
                 msg.error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -172,6 +172,29 @@ fun MessageBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             }
+        }
+    }
+}
+
+/** Dots plus what Hermes is doing, so a pause doesn't look like a freeze. */
+@Composable
+fun WorkingLine(msg: ChatMessage) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(msg.id) {
+        while (true) { kotlinx.coroutines.delay(2_000); now = System.currentTimeMillis() }
+    }
+    val quiet = if (msg.lastEventAt > 0) (now - msg.lastEventAt) / 1000 else 0
+    val label = when {
+        quiet >= 20 -> "still working… (${quiet}s, the PC may be busy)"
+        msg.thinking -> "thinking…"
+        msg.tools.any { it.running } -> "using tools…"
+        else -> ""
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TypingDots()
+        if (label.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

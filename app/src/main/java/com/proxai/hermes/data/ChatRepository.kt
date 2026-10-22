@@ -38,6 +38,10 @@ data class ChatMessage(
     val completionTokens: Int = 0,
     /** Reminders this reply set, as shown text ("Fri Oct 23, 9:00 AM: call Mom"). */
     val reminders: List<String> = emptyList(),
+    /** While streaming: the model is thinking (its reasoning isn't shown). Not saved. */
+    val thinking: Boolean = false,
+    /** While streaming: when the last thing arrived from Hermes (for "still working…"). Not saved. */
+    val lastEventAt: Long = 0,
 )
 
 /** Fired when Hermes finishes a reply, so the voice overlay can read it aloud. */
@@ -124,10 +128,14 @@ class ChatRepository(
             var failed: String? = null
             var usage: Usage? = null
             var answeredBy: String? = null
+            update(reply.id) { it.copy(lastEventAt = System.currentTimeMillis()) }
             hermes.stream(system, wire, settings.sessionId, route).collect { ev ->
+                val now = System.currentTimeMillis()
                 when (ev) {
-                    is StreamEvent.Delta -> update(reply.id) { it.copy(text = it.text + ev.text) }
-                    is StreamEvent.Tool -> update(reply.id) { m ->
+                    is StreamEvent.Delta -> update(reply.id) { it.copy(text = it.text + ev.text, thinking = false, lastEventAt = now) }
+                    is StreamEvent.Thinking -> update(reply.id) { it.copy(thinking = true, lastEventAt = now) }
+                    is StreamEvent.Tool -> update(reply.id) { m0 ->
+                        val m = m0.copy(thinking = false, lastEventAt = now)
                         val others = m.tools.filterNot { it.id == ev.id }
                         val prev = m.tools.firstOrNull { it.id == ev.id }
                         val chip = if (ev.running) ToolChip(ev.id, ev.label, ev.emoji, true)
@@ -237,7 +245,7 @@ class ChatRepository(
             .map { reminders.add(it.at, it.text) }
             .map { "${ReminderStore.format(it.at)}: ${it.text}" } else emptyList()
         update(id) {
-            it.copy(streaming = false, appId = saved?.id ?: it.appId,
+            it.copy(streaming = false, thinking = false, appId = saved?.id ?: it.appId,
                 text = ReminderStore.strip(it.text),
                 reminders = set,
                 error = if (it.text.isBlank() || error == "Stopped") error else null,

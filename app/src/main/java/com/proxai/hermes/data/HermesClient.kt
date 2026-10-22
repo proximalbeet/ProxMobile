@@ -21,6 +21,8 @@ data class Usage(val promptTokens: Int, val completionTokens: Int)
 
 sealed interface StreamEvent {
     data class Delta(val text: String) : StreamEvent
+    /** The model is thinking (reasoning text, not shown). Sent once each time thinking starts. */
+    data object Thinking : StreamEvent
     data class Tool(val id: String, val label: String, val emoji: String, val running: Boolean) : StreamEvent
     data class Done(val sessionId: String?, val usage: Usage? = null, val model: String? = null) : StreamEvent
     data class Error(val message: String) : StreamEvent
@@ -76,6 +78,7 @@ class HermesClient(private val settings: HermesConfig) {
                     val data = StringBuilder()
                     var usage: Usage? = null
                     var model: String? = null
+                    var thinking = false
 
                     suspend fun dispatch() {
                         val payload = data.toString()
@@ -89,6 +92,7 @@ class HermesClient(private val settings: HermesConfig) {
                         }
                         json.optString("model").takeIf { it.isNotBlank() }?.let { model = it }
                         if (ev == "hermes.tool.progress") {
+                            thinking = false
                             send(StreamEvent.Tool(
                                 id = json.optString("toolCallId"),
                                 label = json.optString("label", json.optString("tool")),
@@ -102,7 +106,16 @@ class HermesClient(private val settings: HermesConfig) {
                         }
                         val delta = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
                         val text = delta?.opt("content")
-                        if (text is String && text.isNotEmpty()) send(StreamEvent.Delta(text))
+                        if (text is String && text.isNotEmpty()) {
+                            thinking = false
+                            send(StreamEvent.Delta(text))
+                        }
+                        // Local qwen streams its thinking first; without this the reply looks frozen.
+                        val reasoning = delta?.opt("reasoning_content") ?: delta?.opt("reasoning")
+                        if (reasoning is String && reasoning.isNotEmpty() && !thinking) {
+                            thinking = true
+                            send(StreamEvent.Thinking)
+                        }
                     }
 
                     while (true) {

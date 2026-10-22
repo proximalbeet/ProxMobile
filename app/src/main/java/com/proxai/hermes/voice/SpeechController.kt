@@ -116,6 +116,7 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     private var pauseJob: Job? = null
     private var failuresInARow = 0
     private var midFailures = 0
+    private var followUp = false
     private var useOnDevice = false
 
     private fun createRecognizer(): SpeechRecognizer? {
@@ -159,8 +160,12 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         }
     }
 
-    /** Start a dictation (mic tap, power button, hands-free). */
-    fun listen() {
+    /**
+     * Start a dictation (mic tap, power button, hands-free).
+     * [followUp] = hands-free listening after a reply: saying nothing just ends it, no error.
+     */
+    fun listen(followUp: Boolean = false) {
+        this.followUp = followUp
         stopSpeaking()
         cancelPause()
         _error.value = null
@@ -174,7 +179,14 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         dictating = true
         // A recognizer kept from earlier can be bound to a speech service that has since restarted.
         dropRecognizer()
-        startSegment()
+        _state.value = MicState.Listening
+        // Give the old recognizer time to shut down (starting at once often gets "busy"), and after
+        // a spoken reply let the audio switch from the speaker to the mic (car Bluetooth is slow).
+        val gen = ++generation // a second listen() (or a cancel) in the meantime wins
+        scope.launch {
+            delay(if (followUp) 700 else 250)
+            if (dictating && gen == generation) startSegment()
+        }
     }
 
     private fun startSegment() {
@@ -271,8 +283,10 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         if (midDictation || retries > 0) {
             if (!midDictation) retries--
             SpeechLog.add("$message (${errorName(code)}), retrying with a new recognizer")
+            // "Busy" means the old one is still shutting down: wait longer before the next try.
+            val wait = if (code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || code == SpeechRecognizer.ERROR_CLIENT) 900L else 400L
             scope.launch {
-                delay(350)
+                delay(wait)
                 if (dictating) startSegment()
             }
             return
@@ -282,6 +296,8 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         if (shownText().isNotBlank()) {
             finishNow()
             _error.value = note
+        } else if (followUp) {
+            endDictation(null) // after a reply: just stop listening, no error
         } else {
             endDictation("$note. Tap the mic to try again.")
         }
@@ -323,6 +339,10 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                         emptyRetryUsed = true
                         SpeechLog.add("${errorName(error)} with no words, listening once more")
                         restartSegmentSoon()
+                    } else if (followUp) {
+                        // You didn't answer after a reply: the conversation just ends, no error.
+                        SpeechLog.add("no reply after Hermes spoke, stopped listening")
+                        endDictation(null)
                     } else {
                         endDictation("Didn't catch that. Tap the mic to try again.")
                     }

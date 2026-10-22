@@ -95,7 +95,7 @@ class AssistActivity : ComponentActivity() {
         enableEdgeToEdge()
         speech = SpeechController(this) { heard -> app.chat.send(heard, fromVoice = true) }
         speech.onSpeakDone = {
-            if (app.settings.handsFree && !isFinishing && !app.chat.busy.value) startListening()
+            if (app.settings.handsFree && !isFinishing && !app.chat.busy.value) startListening(followUp = true)
         }
 
         setContent { ProxTheme { Overlay() } }
@@ -124,8 +124,9 @@ class AssistActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun startListening() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) speech.listen()
+    /** [followUp]: hands-free listening after a reply (silence ends it quietly). */
+    private fun startListening(followUp: Boolean = false) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) speech.listen(followUp)
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
@@ -176,7 +177,7 @@ class AssistActivity : ComponentActivity() {
                 if (done.fromVoice && app.settings.speakReplies && done.message.id != lastVoiceReplyId) {
                     lastVoiceReplyId = done.message.id
                     speech.speak(done.message.text.ifBlank { done.message.error ?: "" })
-                } else if (app.settings.handsFree && done.fromVoice) startListening()
+                } else if (app.settings.handsFree && done.fromVoice) startListening(followUp = true)
             }
         }
 
@@ -243,7 +244,8 @@ class AssistActivity : ComponentActivity() {
                             else "Listening… (sends after ${"%.1f".format(pauseSec).removeSuffix(".0")} s of quiet)"
                         }
                         queued != null -> "Got it. I'll send that when Hermes finishes."
-                        mic == MicState.Thinking || busy -> "Hermes is working…"
+                        mic == MicState.Thinking || busy ->
+                            if (visible.lastOrNull()?.thinking == true) "Hermes is thinking…" else "Hermes is working…"
                         mic == MicState.Preparing -> "Ye is getting his voice ready…"
                         mic == MicState.Speaking -> "Speaking — tap the orb to interrupt"
                         visible.isEmpty() -> "Tap to talk"

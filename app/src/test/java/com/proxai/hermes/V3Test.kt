@@ -139,6 +139,20 @@ class V3Test {
         web.shutdown()
     }
 
+    @Test fun thinkingIsReportedOnceBeforeTheAnswer() = runBlocking {
+        val web = MockWebServer()
+        val chunk = { d: String -> "data: {\"model\": \"qwen3.5:35b-a3b\", \"choices\": [{\"index\": 0, \"delta\": $d}]}\n\n" }
+        val body = chunk("{\"reasoning_content\": \"The user\"}") + chunk("{\"reasoning_content\": \" wants\"}") +
+            chunk("{\"content\": \"Hi\"}") + "data: [DONE]\n\n"
+        web.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(body))
+        web.start()
+        val events = HermesClient(Fake(web.url("/").toString(), "key")).stream(null, "hi", "s").toList()
+        assertEquals(1, events.count { it is StreamEvent.Thinking })
+        assertTrue(events.indexOfFirst { it is StreamEvent.Thinking } < events.indexOfFirst { it is StreamEvent.Delta })
+        assertEquals("Hi", events.filterIsInstance<StreamEvent.Delta>().joinToString("") { it.text })
+        web.shutdown()
+    }
+
     @Test fun cloudRouteSendsNoModelOrProvider() = runBlocking {
         val web = MockWebServer()
         web.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody("data: [DONE]\n\n"))
