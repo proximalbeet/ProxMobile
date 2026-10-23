@@ -25,6 +25,14 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.3.2", "2026-10-22", listOf(
+            "Kanye voice no longer gives up after one error: a failed sentence is retried once, " +
+                "and if it still fails only that sentence uses the phone voice",
+            "Shorter voice pieces (180 characters, was 300) so the PC's graphics card doesn't run " +
+                "out of memory while the local model is loaded (the \"CUDA error\")",
+            "PC side (after restarting the voice service): out of GPU memory → clears memory and " +
+                "retries the piece in two halves",
+        )),
         Release("0.3.1", "2026-10-22", listOf(
             "New look: glowing blue gradients instead of purple",
             "Named ProxAI everywhere (was Hermes), including the \"Ask ProxAI\" tile",

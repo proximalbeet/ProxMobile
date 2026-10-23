@@ -64,6 +64,16 @@ class KanyeVoice(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
+        /** Piece size sent to the PC. Was 300; 200+ char pieces ran the GPU out of memory with the
+         *  local model loaded (10-22), and shorter pieces need less of it. */
+        const val MAX_PIECE = 180
+
+        /** The PC can't be reached at all (no point retrying a piece). */
+        fun unreachable(e: Throwable): Boolean =
+            e is java.net.ConnectException || e is java.net.UnknownHostException ||
+                e is java.net.SocketTimeoutException ||
+                (e.message ?: "").let { "isn't running" in it || "isn't set up" in it || "rejected the API key" in it }
+
         // A cold model takes ~9 s to load on the PC; warm sentences take ~1-2 s.
         private val DEFAULT_HTTP = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -75,7 +85,7 @@ class KanyeVoice(
          * the first sentence so audio starts quickly; the rest are packed up to [max] chars
          * (Chatterbox gets unstable on long inputs).
          */
-        fun chunks(text: String, max: Int = 300): List<String> {
+        fun chunks(text: String, max: Int = MAX_PIECE): List<String> {
             val sentences = text.trim().split(Regex("(?<=[.!?])\\s+"))
                 .flatMap { s -> if (s.length <= max) listOf(s) else splitLong(s, max) }
                 .filter { it.isNotBlank() }

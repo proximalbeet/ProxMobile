@@ -33,6 +33,22 @@ class KanyeVoiceTest {
         assertEquals("Short one. $long Last sentence.".split(" ").size, parts.joinToString(" ").split(" ").size)
     }
 
+    @Test fun defaultPiecesAreShortEnoughForAFullGpu() {
+        // 10-22: 204- and 215-char pieces ran the PC out of GPU memory with the local model loaded.
+        val reply = "Alright so here is the deal with the graphics card tonight, the local model holds most " +
+            "of the memory and the voice needs a little room, so long pieces fail while short ones work. " +
+            "Second sentence that is also fairly long so the packing has to make a decision about it."
+        val parts = KanyeVoice.chunks(reply)
+        assertTrue(parts.joinToString("|"), parts.all { it.length <= KanyeVoice.MAX_PIECE })
+        assertEquals(180, KanyeVoice.MAX_PIECE)
+    }
+
+    @Test fun onlyAnUnreachablePcSkipsTheRetry() {
+        assertTrue(KanyeVoice.unreachable(java.net.ConnectException("refused")))
+        assertTrue(KanyeVoice.unreachable(IOException("Kanye voice service isn't running on the PC")))
+        assertTrue(!KanyeVoice.unreachable(IOException("voice unavailable: CUDA out of memory. Tried to allocate 382.00 MiB")))
+    }
+
     @Test fun emptyTextGivesNoChunks() {
         assertEquals(emptyList<String>(), KanyeVoice.chunks("   "))
     }

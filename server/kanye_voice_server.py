@@ -41,6 +41,13 @@ MAX_TEXT_CHARS = 1200
 VOICE_NAME = re.compile(r"^[a-z0-9_-]{1,40}$")
 # reference/ also holds raw source recordings, so only listed clips count as voices.
 ALLOWED_VOICES = [v.strip() for v in os.getenv("PROXAI_VOICES", "kanye").split(",") if v.strip()]
+# Out of GPU memory on a piece: halve it and retry, down to this size (10-22: in server mode the
+# local model holds ~10.2 GB, so a 215-char piece needed 382 MB more than was free).
+SMALLEST_PIECE = 60
+
+# Lets PyTorch hand freed VRAM back in smaller blocks (less waste when memory is tight).
+# Must be set before torch loads.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 sys.path.insert(0, str(VOICE_DIR))
 import tts_pipeline as pipeline  # noqa: E402  (Hermes's script: settings + helpers)
@@ -118,14 +125,28 @@ class Voice:
             gap = np.zeros(int(pipeline.GAP_SECONDS * self.model.sr), dtype=np.float32)
             pieces = []
             for chunk in pipeline.split_into_chunks(text):
-                wav = self.model.generate(chunk, exaggeration=pipeline.EXAGGERATION,
-                                          cfg_weight=pipeline.CFG_WEIGHT)
-                pieces += [wav.squeeze().cpu().numpy(), gap]
+                for wav in self._generate(chunk):
+                    pieces += [wav.squeeze().cpu().numpy(), gap]
             audio = np.concatenate(pieces[:-1])
             buf = io.BytesIO()
             sf.write(buf, audio, self.model.sr, format="WAV", subtype="PCM_16")
             self.last_used = time.monotonic()
             return buf.getvalue(), len(audio) / self.model.sr
+
+    def _generate(self, text: str) -> list:
+        """One piece of speech. If the GPU runs out of memory, free PyTorch's cache and retry the
+        text in two halves (smaller pieces need less memory), down to SMALLEST_PIECE chars."""
+        import torch
+        try:
+            return [self.model.generate(text, exaggeration=pipeline.EXAGGERATION,
+                                        cfg_weight=pipeline.CFG_WEIGHT)]
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if len(text) <= SMALLEST_PIECE:
+                raise
+            halves = split_half(text)
+            log(f"out of GPU memory on {len(text)} chars; retrying as {len(halves[0])} + {len(halves[1])}")
+            return [w for half in halves for w in self._generate(half)]
 
     def is_idle(self) -> bool:
         # Holding the lock means no generation or model load is running right now.
@@ -140,6 +161,18 @@ class Voice:
 VOICE = Voice()
 KEY = ApiKey(ENV_FILE)
 MODE_FILE = Path(os.getenv("PROXAI_STATE_DIR", "~/.local/state/proxai")).expanduser() / "mode.json"
+
+
+def split_half(text: str) -> tuple[str, str]:
+    """Split near the middle, preferring a comma/semicolon, else a space."""
+    mid = len(text) // 2
+    for marks in ((",", ";", ":", " -"), (" ",)):
+        cuts = [i + 1 for i, ch in enumerate(text) if any(text.startswith(m, i) for m in marks)]
+        cuts = [c for c in cuts if len(text) // 4 <= c <= len(text) * 3 // 4]
+        if cuts:
+            cut = min(cuts, key=lambda c: abs(c - mid))
+            return text[:cut].strip(), text[cut:].strip()
+    return text[:mid], text[mid:]
 
 
 def read_mode() -> dict:

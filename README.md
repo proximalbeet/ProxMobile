@@ -15,6 +15,15 @@ An Android front end for the **proxai** Hermes Agent profile:
 - Generated apps can call back into Hermes through a small JS bridge:
   `await ProxAI.ask(prompt)`, `ProxAI.speak(text)`, `ProxAI.toast(text)`, `ProxAI.vibrate(ms)`.
 
+### New in 0.3.2 (2026-10-22)
+
+- Kanye voice "CUDA out of memory" fix. With the local model loaded (server mode) the GPU is
+  nearly full, and a 200+ char piece failed, which switched the rest of the reply to the phone
+  voice. Pieces are now at most 180 chars; a failed piece is retried once, and only that piece
+  falls back to the phone voice. The voice server frees PyTorch's cache and retries a piece in
+  two halves when it runs out of GPU memory (needs `systemctl --user restart proxai-phone-voice`
+  after merging, since the service runs `server/` from the main checkout).
+
 ### New in 0.3.1 (2026-10-22)
 
 - Glowing blue look (was purple), named **ProxAI** everywhere (was Hermes), new "P + spark" logo.

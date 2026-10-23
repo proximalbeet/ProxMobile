@@ -61,6 +61,8 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     private var ttsReady = false
     private var pendingSpeech: String? = null
     private var lastUtterance: String? = null
+    /** Phone-voice pieces spoken in the middle of a Kanye reply, waiting to finish. */
+    private val pieceWaiters = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val settings get() = ProxApp.instance.settings
@@ -80,9 +82,9 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                 tts?.language = Locale.getDefault()
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) { _state.value = MicState.Speaking }
-                    override fun onDone(id: String?) { if (id == lastUtterance) spokeDone() }
-                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { if (id == lastUtterance) spokeDone() }
-                    override fun onStop(id: String?, interrupted: Boolean) {}
+                    override fun onDone(id: String?) { pieceWaiters.remove(id)?.invoke(); if (id == lastUtterance) spokeDone() }
+                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { pieceWaiters.remove(id)?.invoke(); if (id == lastUtterance) spokeDone() }
+                    override fun onStop(id: String?, interrupted: Boolean) { pieceWaiters.remove(id)?.invoke() }
                 })
                 pendingSpeech?.let { speak(it) }
                 pendingSpeech = null
@@ -438,22 +440,61 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         kanyeJob = scope.launch {
             supervisorScope {
                 var next: Deferred<File>? = async(Dispatchers.IO) { kanye.synth(parts[0]) }
+                var misses = 0
                 for (i in parts.indices) {
-                    val file = try {
+                    var failure: Exception? = null
+                    val file: File? = try {
                         next!!.await()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        // PC off, service down, GPU busy...: say the rest in the phone voice.
-                        Toast.makeText(context, "${e.message ?: "Kanye voice unavailable"} — using phone voice", Toast.LENGTH_SHORT).show()
-                        speakPhone(parts.drop(i).joinToString(" "))
-                        return@supervisorScope
+                        failure = e
+                        // GPU briefly full (10-22: "CUDA out of memory" with the local model loaded):
+                        // try once more; the PC frees memory and splits the piece smaller.
+                        if (KanyeVoice.unreachable(e)) null else try {
+                            delay(KANYE_RETRY_MS)
+                            kanye.synth(parts[i])
+                        } catch (e2: CancellationException) {
+                            throw e2
+                        } catch (e2: Exception) {
+                            failure = e2; null
+                        }
                     }
                     next = if (i + 1 < parts.size) async(Dispatchers.IO) { kanye.synth(parts[i + 1]) } else null
+                    if (file == null) {
+                        val why = failure?.message ?: "Kanye voice unavailable"
+                        misses++
+                        if (misses >= 2 || failure?.let { KanyeVoice.unreachable(it) } == true) {
+                            // PC off, service down, or failing over and over: say the rest in the phone voice.
+                            next?.cancel()
+                            Toast.makeText(context, "$why — using phone voice", Toast.LENGTH_SHORT).show()
+                            speakPhone(parts.drop(i).joinToString(" "))
+                            return@supervisorScope
+                        }
+                        // One bad piece: phone voice for just this piece, then back to Kanye.
+                        Toast.makeText(context, "$why — phone voice for one sentence", Toast.LENGTH_SHORT).show()
+                        _state.value = MicState.Speaking
+                        sayPhonePiece(parts[i])
+                        continue
+                    }
                     _state.value = MicState.Speaking
                     try { play(file) } finally { file.delete() }
                 }
                 spokeDone()
+            }
+        }
+    }
+
+    /** Speaks one piece in the phone voice and waits until it has been said. */
+    private suspend fun sayPhonePiece(text: String) {
+        if (!ttsReady) return
+        val id = "piece-${System.nanoTime()}"
+        suspendCancellableCoroutine<Unit> { cont ->
+            pieceWaiters[id] = { if (cont.isActive) cont.resume(Unit) }
+            cont.invokeOnCancellation { pieceWaiters.remove(id); runCatching { tts?.stop() } }
+            if (tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) != TextToSpeech.SUCCESS) {
+                pieceWaiters.remove(id)
+                if (cont.isActive) cont.resume(Unit)
             }
         }
     }
@@ -496,6 +537,7 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
 
     companion object {
         private const val MAX_RETRIES = 2
+        private const val KANYE_RETRY_MS = 1200L
         private const val MAX_MID_FAILURES = 6
         /** A pause setting this short means "send as soon as the recognizer stops" (the old behavior). */
         const val SEND_AT_ONCE_MS = 900L
