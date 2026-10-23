@@ -25,6 +25,10 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.5.2", "2026-10-23", listOf(
+            "Apps tab: \"Remove…\" on apps built on your PC: uninstall from the phone, and/or delete from " +
+                "the PC (ProxAI asks you to confirm; the files go to a trash folder on the PC)",
+        )),
         Release("0.5.1", "2026-10-22", listOf(
             "Apps tab: the \"Built on your PC\" and \"On this phone\" headings were dark on dark; now readable",
         )),

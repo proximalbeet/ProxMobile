@@ -65,6 +65,7 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var resumed by remember { mutableIntStateOf(0) }   // re-read installed versions on return
     var versionsOf by remember { mutableStateOf<PcApp?>(null) }
+    var removing by remember { mutableStateOf<PcApp?>(null) }
     var working by remember { mutableStateOf<String?>(null) }
 
     val owner = LocalLifecycleOwner.current
@@ -119,7 +120,8 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
                     }
                 },
                 onChange = { onAskProxAI("Change my ${app.name} app (${app.id}): ") },
-                onVersions = { versionsOf = app })
+                onVersions = { versionsOf = app },
+                onRemove = { removing = app })
         }
         if (apps.isNotEmpty() && error != null) {
             Text(error!!, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
@@ -130,6 +132,32 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
             color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp))
     }
 
+    removing?.let { app ->
+        val installed = app.latest?.packageName?.let { repo.installedCode(it) } != null
+        AlertDialog(onDismissRequest = { removing = null },
+            title = { Text("Remove ${app.name}?") },
+            text = {
+                Text((if (installed) "Uninstall it from this phone, and/or delete it from the PC. " else "") +
+                    "Deleting from the PC removes it from this list; ProxAI asks you to confirm, and its files go to " +
+                    "a trash folder on the PC, so it can be restored.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    onAskProxAI("Delete my ${app.name} app (${app.id}) from the PC.")
+                }) { Text("Delete from PC") }
+            },
+            dismissButton = {
+                Row {
+                    if (installed) TextButton(onClick = {
+                        removing = null
+                        AppInstaller.uninstall(ctx, app.latest!!.packageName)
+                    }) { Text("Uninstall") }
+                    TextButton(onClick = { removing = null }) { Text("Cancel") }
+                }
+            })
+    }
+
     versionsOf?.let { app -> VersionsDialog(app, onDismiss = { versionsOf = null }, onRollback = { b ->
         versionsOf = null
         onAskProxAI("Roll back my ${app.name} app (${app.id}) to build ${b.code} (version ${b.version}).")
@@ -137,7 +165,8 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
 }
 
 @Composable
-private fun PcAppCard(app: PcApp, installed: Long?, working: Boolean, onMain: () -> Unit, onChange: () -> Unit, onVersions: () -> Unit) {
+private fun PcAppCard(app: PcApp, installed: Long?, working: Boolean, onMain: () -> Unit, onChange: () -> Unit,
+                      onVersions: () -> Unit, onRemove: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()) {
@@ -176,6 +205,7 @@ private fun PcAppCard(app: PcApp, installed: Long?, working: Boolean, onMain: ()
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Change with ProxAI") }, onClick = { menu = false; onChange() })
                     DropdownMenuItem(text = { Text("Versions") }, onClick = { menu = false; onVersions() })
+                    DropdownMenuItem(text = { Text("Remove…") }, onClick = { menu = false; onRemove() })
                 }
             }
         }

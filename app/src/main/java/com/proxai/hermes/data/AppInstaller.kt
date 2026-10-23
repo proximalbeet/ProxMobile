@@ -80,6 +80,11 @@ object AppInstaller {
         return Result.Started
     }
 
+    /** Android's own "Uninstall this app?" prompt. */
+    fun uninstall(ctx: Context, packageName: String) {
+        ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     fun launch(ctx: Context, packageName: String): Boolean {
         val i = ctx.packageManager.getLaunchIntentForPackage(packageName) ?: return false
         ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
