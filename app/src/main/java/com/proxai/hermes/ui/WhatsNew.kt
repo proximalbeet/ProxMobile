@@ -25,6 +25,15 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.6.0", "2026-10-23", listOf(
+            "Voice replies come in short parts: each part is its own bubble and is spoken as soon as it " +
+                "arrives, while ProxAI writes the next one",
+            "Token counter shows the real conversation size from the PC (\"33k context\"), not every step of " +
+                "a turn added up (it showed 126k / 376k when each call was ~32k)",
+            "Reminders: no more alarms for times already past or repeats of one already set; ProxAI can set " +
+                "one on its own per reply, only for something you mentioned",
+            "\"How do I…\" questions get a short explanation instead of ProxAI going and doing it",
+        )),
         Release("0.5.2", "2026-10-23", listOf(
             "Apps tab: \"Remove…\" on apps built on your PC: uninstall from the phone, and/or delete from " +
                 "the PC (ProxAI asks you to confirm; the files go to a trash folder on the PC)",

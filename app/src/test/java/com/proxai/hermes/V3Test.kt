@@ -221,6 +221,19 @@ class V3Test {
         assertEquals(listOf("Take the pizza out"), ReminderStore.keep(three, false, emptyList(), now).map { it.text })
         assertEquals(listOf("Take the pizza out", "Call mom"), ReminderStore.keep(three, true, emptyList(), now).map { it.text })
     }
+
+    @Test fun voiceRepliesSplitIntoParts() {
+        val reply = "Your GPU is at 41 degrees.\n\nThat's idle; the warning is at 75.\n\n" +
+            "Want an app for it?\n\n[[remind: 2026-10-23T18:00 | Check temps]]"
+        assertEquals(listOf("Your GPU is at 41 degrees.", "That's idle; the warning is at 75.", "Want an app for it?"),
+            com.proxai.hermes.data.VoiceParts.split(reply))
+        // While streaming, the last paragraph may still be growing.
+        assertEquals(listOf("Your GPU is at 41 degrees."),
+            com.proxai.hermes.data.VoiceParts.finished("Your GPU is at 41 degrees.\n\nThat's id", done = false))
+        // Blank lines inside a code block don't split it.
+        val app = "Here it is.\n\n```html\n<html>\n\n<body></body>\n</html>\n```"
+        assertEquals(2, com.proxai.hermes.data.VoiceParts.split(app).size)
+    }
 }
 
 private class Fake(override val serverUrl: String, override val apiKey: String, override val model: String = "") : HermesConfig

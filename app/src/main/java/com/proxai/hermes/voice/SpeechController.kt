@@ -26,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -59,8 +60,8 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var pendingSpeech: String? = null
-    private var lastUtterance: String? = null
+    /** The reply being spoken, part by part (voice replies arrive in parts; see [beginParts]). */
+    private var partQueue: Channel<String>? = null
     /** Phone-voice pieces spoken in the middle of a Kanye reply, waiting to finish. */
     private val pieceWaiters = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
 
@@ -82,12 +83,10 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                 tts?.language = Locale.getDefault()
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) { _state.value = MicState.Speaking }
-                    override fun onDone(id: String?) { pieceWaiters.remove(id)?.invoke(); if (id == lastUtterance) spokeDone() }
-                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { pieceWaiters.remove(id)?.invoke(); if (id == lastUtterance) spokeDone() }
+                    override fun onDone(id: String?) { pieceWaiters.remove(id)?.invoke() }
+                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { pieceWaiters.remove(id)?.invoke() }
                     override fun onStop(id: String?, interrupted: Boolean) { pieceWaiters.remove(id)?.invoke() }
                 })
-                pendingSpeech?.let { speak(it) }
-                pendingSpeech = null
             }
         }
     }
@@ -413,32 +412,56 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
         if (settings.kanyeVoice) kanye.warmup()
     }
 
+    /** Speaks a whole reply. */
     fun speak(text: String) {
-        val clean = spokenText(text)
-        if (clean.isBlank()) { spokeDone(); return }
-        stopSpeaking()
-        audio?.requestAudioFocus(focus)
-        if (settings.kanyeVoice && settings.isConfigured) speakKanye(clean) else speakPhone(clean)
+        beginParts()
+        addPart(text)
+        endParts()
     }
 
-    private fun speakPhone(clean: String) {
-        if (!ttsReady) { pendingSpeech = clean; return }
-        _state.value = MicState.Speaking
-        // TTS has a per-utterance length limit; split long replies.
-        val parts = clean.chunked(3500)
-        lastUtterance = "proxai-${parts.size - 1}"
-        parts.forEachIndexed { i, part ->
-            tts?.speak(part, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "proxai-$i")
+    /**
+     * Starts speaking a reply that arrives in parts (voice mode, 10-23): each [addPart] is said as soon
+     * as it's added, while the model is still writing the next one. [endParts] when the reply is done.
+     */
+    fun beginParts() {
+        stopSpeaking()
+        audio?.requestAudioFocus(focus)
+        val q = Channel<String>(Channel.UNLIMITED)
+        partQueue = q
+        kanyeJob = scope.launch {
+            var kanyeOk = settings.kanyeVoice && settings.isConfigured
+            for (part in q) {
+                val clean = spokenText(part)
+                if (clean.isBlank()) continue
+                if (kanyeOk) kanyeOk = sayKanye(clean) else sayPhone(clean)
+            }
+            spokeDone()
         }
     }
 
-    /** Plays the reply sentence by sentence, fetching the next piece while the current one plays. */
-    private fun speakKanye(clean: String) {
+    fun addPart(text: String) { partQueue?.trySend(text) }
+
+    fun endParts() { partQueue?.close(); partQueue = null }
+
+    /** Phone voice for one part; waits (up to 5 s) for the phone's TTS engine to start. */
+    private suspend fun sayPhone(clean: String) {
+        var waited = 0
+        while (!ttsReady && waited < 5_000) { delay(100); waited += 100 }
+        _state.value = MicState.Speaking
+        // TTS has a per-utterance length limit; split long parts.
+        for (piece in clean.chunked(3500)) sayPhonePiece(piece)
+    }
+
+    /**
+     * Says one part sentence by sentence, fetching the next piece while the current one plays.
+     * Returns false when the Kanye voice gave up (PC unreachable or failing), so the rest of the
+     * reply uses the phone voice.
+     */
+    private suspend fun sayKanye(clean: String): Boolean {
         val parts = KanyeVoice.chunks(clean)
-        if (parts.isEmpty()) { spokeDone(); return }
-        _state.value = MicState.Preparing
-        kanyeJob = scope.launch {
-            supervisorScope {
+        if (parts.isEmpty()) return true
+        if (_state.value != MicState.Speaking) _state.value = MicState.Preparing
+        return supervisorScope {
                 var next: Deferred<File>? = async(Dispatchers.IO) { kanye.synth(parts[0]) }
                 var misses = 0
                 for (i in parts.indices) {
@@ -468,8 +491,8 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                             // PC off, service down, or failing over and over: say the rest in the phone voice.
                             next?.cancel()
                             Toast.makeText(context, "$why — using phone voice", Toast.LENGTH_SHORT).show()
-                            speakPhone(parts.drop(i).joinToString(" "))
-                            return@supervisorScope
+                            sayPhone(parts.drop(i).joinToString(" "))
+                            return@supervisorScope false
                         }
                         // One bad piece: phone voice for just this piece, then back to Kanye.
                         Toast.makeText(context, "$why — phone voice for one sentence", Toast.LENGTH_SHORT).show()
@@ -480,8 +503,7 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
                     _state.value = MicState.Speaking
                     try { play(file) } finally { file.delete() }
                 }
-                spokeDone()
-            }
+                true
         }
     }
 
@@ -519,6 +541,7 @@ class SpeechController(private val context: Context, private val onFinal: (Strin
     }
 
     fun stopSpeaking() {
+        partQueue?.cancel(); partQueue = null
         kanyeJob?.cancel(); kanyeJob = null
         if (tts?.isSpeaking == true) tts?.stop()
         if (_state.value == MicState.Speaking || _state.value == MicState.Preparing) _state.value = MicState.Idle

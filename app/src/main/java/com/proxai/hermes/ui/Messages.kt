@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import com.proxai.hermes.ProxApp
 import com.proxai.hermes.data.AppStore
 import com.proxai.hermes.data.ChatMessage
+import com.proxai.hermes.data.VoiceParts
 
 sealed interface Seg {
     data class Text(val s: String) : Seg
@@ -125,59 +126,71 @@ fun MessageBubble(
 ) {
     if (msg.role == "note") { NoteCard(msg); return }
     val isUser = msg.role == "user"
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(
-                topStart = 20.dp, topEnd = 20.dp,
-                bottomStart = if (isUser) 20.dp else 6.dp, bottomEnd = if (isUser) 6.dp else 20.dp),
-            modifier = Modifier.widthIn(max = 340.dp),
-        ) {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (msg.tools.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        msg.tools.takeLast(8).forEach { ToolPill(it.emoji, it.label, it.running) }
+    // Voice replies come in short parts, one bubble each (spoken as each arrives).
+    val parts = if (msg.voice && !isUser) VoiceParts.split(msg.text).ifEmpty { listOf("") } else listOf(msg.text)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+        parts.forEachIndexed { index, part ->
+            val first = index == 0
+            val last = index == parts.lastIndex
+            Surface(
+                color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(
+                    topStart = 20.dp, topEnd = 20.dp,
+                    bottomStart = if (isUser || !last) 20.dp else 6.dp, bottomEnd = if (isUser) 6.dp else 20.dp),
+                modifier = Modifier.widthIn(max = 340.dp),
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (first && msg.tools.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            msg.tools.takeLast(8).forEach { ToolPill(it.emoji, it.label, it.running) }
+                        }
                     }
-                }
-                val segs = segments(msg.text)
-                SelectionContainer {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        segs.forEach { seg ->
-                            when (seg) {
-                                is Seg.Text -> MarkdownText(seg.s)
-                                is Seg.Code -> {
-                                    val isApp = seg.lang.startsWith("htm", true) ||
-                                        seg.body.take(200).contains("<!doctype html", true)
-                                    if (isApp) AppCard(msg, seg, onOpenApp, onRemixApp) else CodeBlock(seg)
+                    val segs = segments(part)
+                    SelectionContainer {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            segs.forEach { seg ->
+                                when (seg) {
+                                    is Seg.Text -> MarkdownText(seg.s)
+                                    is Seg.Code -> {
+                                        val isApp = seg.lang.startsWith("htm", true) ||
+                                            seg.body.take(200).contains("<!doctype html", true)
+                                        if (isApp) AppCard(msg, seg, onOpenApp, onRemixApp) else CodeBlock(seg)
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                if (msg.streaming && (msg.text.isEmpty() || msg.thinking)) WorkingLine(msg)
-                msg.error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                }
-                msg.reminders.forEach { r ->
-                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(12.dp)) {
-                        Text("⏰ $r", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer)
-                    }
-                }
-                if (!isUser && !msg.streaming && msg.model != null) {
-                    // contextTokens: the conversation's size. promptTokens adds up every step of the turn.
-                    val tokens = when {
-                        msg.contextTokens > 0 -> " · ${formatTokens(msg.contextTokens)} context"
-                        msg.promptTokens > 0 -> " · ${formatTokens(msg.promptTokens)} read"
-                        else -> ""
-                    }
-                    Text("${msg.model}$tokens", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    if (last) BubbleFooter(msg, isUser)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BubbleFooter(msg: ChatMessage, isUser: Boolean) {
+    if (msg.streaming && (msg.text.isEmpty() || msg.thinking)) WorkingLine(msg)
+    msg.error?.let {
+        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+    }
+    msg.reminders.forEach { r ->
+        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(12.dp)) {
+            Text("⏰ $r", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onTertiaryContainer)
+        }
+    }
+    if (!isUser && !msg.streaming && msg.model != null) {
+        // contextTokens: the conversation's size. promptTokens adds up every step of the turn.
+        val tokens = when {
+            msg.contextTokens > 0 -> " · ${formatTokens(msg.contextTokens)} context"
+            msg.promptTokens > 0 -> " · ${formatTokens(msg.promptTokens)} read"
+            else -> ""
+        }
+        Text("${msg.model}$tokens", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
     }
 }
 

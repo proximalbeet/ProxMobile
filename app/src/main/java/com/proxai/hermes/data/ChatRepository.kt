@@ -41,6 +41,8 @@ data class ChatMessage(
     val contextTokens: Int = 0,
     /** The model's context window, when known. */
     val contextWindow: Int = 0,
+    /** Asked by voice: the reply is shown and spoken in parts (VoiceParts). */
+    val voice: Boolean = false,
     /** Reminders this reply set, as shown text ("Fri Oct 23, 9:00 AM: call Mom"). */
     val reminders: List<String> = emptyList(),
     /** While streaming: the model is thinking (its reasoning isn't shown). Not saved. */
@@ -51,6 +53,9 @@ data class ChatMessage(
 
 /** Fired when Hermes finishes a reply, so the voice overlay can read it aloud. */
 data class ReplyDone(val message: ChatMessage, val fromVoice: Boolean)
+
+/** One finished part of a voice reply, to speak now; [last] = the reply is complete. */
+data class VoicePart(val messageId: String, val text: String, val first: Boolean, val last: Boolean)
 
 /** Size and rough cost of the current Hermes session, from the usage Hermes reports. */
 data class SessionStats(
@@ -84,6 +89,9 @@ class ChatRepository(
     val busy: StateFlow<Boolean> = _busy
     private val _done = MutableSharedFlow<ReplyDone>(extraBufferCapacity = 4)
     val done: SharedFlow<ReplyDone> = _done
+    private val _voiceParts = MutableSharedFlow<VoicePart>(extraBufferCapacity = 64)
+    val voiceParts: SharedFlow<VoicePart> = _voiceParts
+    private val partsSent = mutableMapOf<String, Int>()
     private var job: Job? = null
 
     /** The route the next request will use (shown in the chat header). */
@@ -112,7 +120,7 @@ class ChatRepository(
             role = "user",
             text = if (target != null) "Remix “${target.title}”: $prompt" else prompt,
             targetAppId = target?.id)
-        val reply = ChatMessage(role = "assistant", text = "", streaming = true, targetAppId = target?.id)
+        val reply = ChatMessage(role = "assistant", text = "", streaming = true, targetAppId = target?.id, voice = fromVoice)
         _messages.value = _messages.value + userMsg + reply
         _busy.value = true
 
@@ -146,7 +154,10 @@ class ChatRepository(
             hermes.stream(system, wire, settings.sessionId, route).collect { ev ->
                 val now = System.currentTimeMillis()
                 when (ev) {
-                    is StreamEvent.Delta -> update(reply.id) { it.copy(text = it.text + ev.text, thinking = false, lastEventAt = now) }
+                    is StreamEvent.Delta -> {
+                        update(reply.id) { it.copy(text = it.text + ev.text, thinking = false, lastEventAt = now) }
+                        if (fromVoice) sendVoiceParts(reply.id, done = false)
+                    }
                     is StreamEvent.Thinking -> update(reply.id) { it.copy(thinking = true, lastEventAt = now) }
                     is StreamEvent.Tool -> update(reply.id) { m0 ->
                         val m = m0.copy(thinking = false, lastEventAt = now)
@@ -178,7 +189,11 @@ class ChatRepository(
             sendQueued()
         }
         job?.invokeOnCompletion { cause ->
-            if (cause != null) scope.launch { finish(reply.id, "Stopped", null, false, notify = false) }
+            if (cause != null) scope.launch {
+                finish(reply.id, "Stopped", null, false, notify = false)
+                // Close a voice reply that was being spoken part by part.
+                if (fromVoice && partsSent.remove(reply.id) != null) _voiceParts.tryEmit(VoicePart(reply.id, "", false, true))
+            }
         }
     }
 
@@ -313,9 +328,27 @@ class ChatRepository(
         _busy.value = false
         persist()
         val done = _messages.value.firstOrNull { it.id == id } ?: return
+        if (notify && fromVoice) sendVoiceParts(id, done = true)
         if (notify) _done.tryEmit(ReplyDone(done, fromVoice))
         if (notify && settings.replyNotifications && !inForeground()) {
             Notifier.reply(context, SpeechController.spokenText(done.text).ifBlank { done.error ?: "" })
+        }
+    }
+
+    /** Emits the voice reply's newly finished parts (all of them, plus last=true, when [done]). */
+    private fun sendVoiceParts(id: String, done: Boolean) {
+        val msg = _messages.value.firstOrNull { it.id == id } ?: return
+        val parts = VoiceParts.finished(msg.text, done)
+        val sent = partsSent[id] ?: 0
+        for (i in sent until parts.size) {
+            _voiceParts.tryEmit(VoicePart(id, parts[i], first = i == 0, last = done && i == parts.lastIndex))
+        }
+        partsSent[id] = maxOf(sent, parts.size)
+        if (done) {
+            // Nothing new to say at the end (or no text at all): still close the reply; say the error if any.
+            if (parts.size <= sent) _voiceParts.tryEmit(VoicePart(id, if (parts.isEmpty()) msg.error.orEmpty() else "",
+                first = sent == 0, last = true))
+            partsSent.remove(id)
         }
     }
 
@@ -332,7 +365,7 @@ class ChatRepository(
                 .put("time", m.time).put("model", m.model).put("local", m.local)
                 .put("promptTokens", m.promptTokens).put("completionTokens", m.completionTokens)
                 .put("contextTokens", m.contextTokens).put("contextWindow", m.contextWindow)
-                .put("reminders", JSONArray(m.reminders))
+                .put("reminders", JSONArray(m.reminders)).put("voice", m.voice)
                 .put("tools", JSONArray().apply {
                     m.tools.forEach { put(JSONObject().put("id", it.id).put("label", it.label).put("emoji", it.emoji)) }
                 }))
@@ -354,6 +387,7 @@ class ChatRepository(
                 promptTokens = o.optInt("promptTokens"), completionTokens = o.optInt("completionTokens"),
                 contextTokens = o.optInt("contextTokens"), contextWindow = o.optInt("contextWindow"),
                 reminders = (0 until (rem?.length() ?: 0)).map { rem!!.getString(it) },
+                voice = o.optBoolean("voice"),
                 tools = (0 until (tools?.length() ?: 0)).map {
                     val t = tools!!.getJSONObject(it)
                     ToolChip(t.getString("id"), t.getString("label"), t.optString("emoji"), false)

@@ -4,6 +4,10 @@ package com.proxai.hermes.data
 object Prompts {
     private const val BASE = """You are being used through the ProxAI Android app on the user's phone.
 
+HOW-TO QUESTIONS — when the user asks how to do something ("how do I…", "how to…", "how can I…"),
+explain it briefly (a few lines; commands in a code block) and stop. Don't run tools or do it
+yourself unless they ask you to; offer to in one short line if it's useful.
+
 APP GENERATION — when the user asks you to build, make, create or generate an app, tool, game,
 tracker, calculator, timer, dashboard, widget or similar:
 - If you have the `proxai_app` tool, USE IT: it has Claude Code build a real installable app on the
@@ -48,9 +52,13 @@ calendar event or a Discord reminder for it unless the user asks for that too.""
 
     private const val VOICE = """
 
-VOICE MODE — the user is talking to you by voice from the phone's power-button assistant and
-your reply will be read aloud. Answer briefly and conversationally (1-3 sentences, no markdown,
-no lists) unless they ask for detail. App requests still get the full ```html block; keep the
+VOICE MODE — the user is talking to you by voice and your reply is read aloud, paragraph by
+paragraph, while you're still writing. So:
+- First paragraph: the answer itself, 1-2 short sentences. Often that's the whole reply.
+- Only when more is really needed, up to 3 more short paragraphs (1-3 sentences each), separated
+  by blank lines, most important first. Each paragraph is shown and spoken on its own.
+- No markdown, lists, tables or code (they can't be spoken), no filler, no repeating the question.
+- Asked how to do something: say the steps briefly; don't go do it unless they ask you to. App requests still get the full ```html block; keep the
 sentence before it short since only that part is spoken.
 Their words come from phone speech recognition, often in a car, so expect misheard words (e.g.
 "casual" for "causal", "firewall" for "firmware", "sword" for "swerve", "crime" for "cron",

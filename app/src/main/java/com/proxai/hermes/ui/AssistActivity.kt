@@ -174,10 +174,21 @@ class AssistActivity : ComponentActivity() {
         LaunchedEffect(busy) { speech.setThinking(busy) }
         LaunchedEffect(Unit) {
             app.chat.done.collect { done ->
-                if (done.fromVoice && app.settings.speakReplies && done.message.id != lastVoiceReplyId) {
-                    lastVoiceReplyId = done.message.id
-                    speech.speak(done.message.text.ifBlank { done.message.error ?: "" })
-                } else if (app.settings.handsFree && done.fromVoice) startListening(followUp = true)
+                if (!(done.fromVoice && app.settings.speakReplies) && app.settings.handsFree && done.fromVoice)
+                    startListening(followUp = true)
+            }
+        }
+        LaunchedEffect(Unit) {
+            // Voice replies are spoken part by part as they arrive, not after the whole reply.
+            app.chat.voiceParts.collect { p ->
+                if (!app.settings.speakReplies) return@collect
+                if (p.first) {
+                    if (p.messageId == lastVoiceReplyId) return@collect
+                    lastVoiceReplyId = p.messageId
+                    speech.beginParts()
+                } else if (p.messageId != lastVoiceReplyId) return@collect
+                speech.addPart(p.text)
+                if (p.last) speech.endParts()
             }
         }
 
