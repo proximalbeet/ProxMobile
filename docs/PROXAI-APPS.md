@@ -118,7 +118,7 @@ systemctl --user restart hermes-gateway-proxai proxai-phone-voice
 ~/dev/projects/ProxMobile/scripts/install-apps-service.sh                  # apps server + tailnet /apps
 ~/dev/projects/ProxMobile/scripts/install-thermal-watch.sh                 # 24/7 PC watch (alerts + pc-stats)
 ```
-Then install `ProxAI-0.5.0.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
+Then install `ProxAI-0.5.1.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
 The image `proxai-sandbox:2.1.302-apps` is already built on the PC; to rebuild it later:
 `./gradlew :appshell:shellKit` (ProxMobile), then `sandbox/build-image.sh` (Hermes).
 
