@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -36,6 +37,10 @@ data class ChatMessage(
     val local: Boolean = false,
     val promptTokens: Int = 0,
     val completionTokens: Int = 0,
+    /** The conversation's real size after this reply (latest model call on the PC); 0 = unknown. */
+    val contextTokens: Int = 0,
+    /** The model's context window, when known. */
+    val contextWindow: Int = 0,
     /** Reminders this reply set, as shown text ("Fri Oct 23, 9:00 AM: call Mom"). */
     val reminders: List<String> = emptyList(),
     /** While streaming: the model is thinking (its reasoning isn't shown). Not saved. */
@@ -136,6 +141,7 @@ class ChatRepository(
             var failed: String? = null
             var usage: Usage? = null
             var answeredBy: String? = null
+            var liveSession: String? = null
             update(reply.id) { it.copy(lastEventAt = System.currentTimeMillis()) }
             hermes.stream(system, wire, settings.sessionId, route).collect { ev ->
                 val now = System.currentTimeMillis()
@@ -151,17 +157,22 @@ class ChatRepository(
                         m.copy(tools = others + chip)
                     }
                     is StreamEvent.Error -> failed = ev.message
-                    is StreamEvent.Done -> { usage = ev.usage; answeredBy = ev.model }
+                    is StreamEvent.Done -> { usage = ev.usage; answeredBy = ev.model; liveSession = ev.sessionId }
                     is StreamEvent.Status -> onPcStatus(ev)
                 }
             }
             if (failed == null && carry.isNotBlank()) settings.carryOver = ""
             // Cloud replies report the profile's virtual name ("proxai"), so keep the route's label.
             val label = if (route.local) answeredBy?.let { "$it · local" } ?: route.label else "cloud"
+            // The reply's usage adds up every model call of the turn; ask the PC for the real size.
+            val ctx = if (usage != null) withTimeoutOrNull(4_000) {
+                withContext(Dispatchers.IO) { runCatching { PcStatsClient(settings).context(liveSession ?: settings.sessionId) }.getOrNull() }
+            } else null
             update(reply.id) {
-                it.copy(model = label, promptTokens = usage?.promptTokens ?: 0, completionTokens = usage?.completionTokens ?: 0)
+                it.copy(model = label, promptTokens = usage?.promptTokens ?: 0, completionTokens = usage?.completionTokens ?: 0,
+                    contextTokens = ctx?.tokens ?: 0, contextWindow = ctx?.window ?: 0)
             }
-            finish(reply.id, failed, target?.id, fromVoice)
+            finish(reply.id, failed, target?.id, fromVoice, remindersAsked = ReminderStore.userAsked(prompt))
             endPcCompaction(done = failed == null)
             maybeAutoCompact(route, _messages.value.firstOrNull { it.id == reply.id })
             sendQueued()
@@ -205,7 +216,7 @@ class ChatRepository(
     private fun maybeAutoCompact(route: ModelRoute, reply: ChatMessage?) {
         val limit = settings.compactAtTokens
         if (limit <= 0 || route.local || reply == null) return
-        if (contextEstimate(reply) >= limit) compact(auto = true)
+        if (contextSize(reply) >= limit) compact(auto = true)
     }
 
     // ---- compaction done by Hermes on the PC ------------------------------------------------------
@@ -280,14 +291,16 @@ class ChatRepository(
         }
     }
 
-    private suspend fun finish(id: String, error: String?, targetId: String?, fromVoice: Boolean, notify: Boolean = true) {
+    private suspend fun finish(id: String, error: String?, targetId: String?, fromVoice: Boolean, notify: Boolean = true,
+                               remindersAsked: Boolean = false) {
         val msg = _messages.value.firstOrNull { it.id == id } ?: return
         if (!msg.streaming) return
         val html = AppStore.extractHtml(msg.text)
         val saved = html?.let { withContext(Dispatchers.IO) { apps.save(it, targetId) } }
-        // Reminder tags -> phone alarms; the tag itself isn't shown or spoken.
-        val set = if (error == null) ReminderStore.parse(msg.text)
-            .filter { it.at > System.currentTimeMillis() - 60_000 }
+        // Reminder tags -> phone alarms; the tag itself isn't shown or spoken. ReminderStore.keep drops
+        // past times and repeats, and allows one unasked reminder per reply (10-23: it set them every reply).
+        val set = if (error == null) ReminderStore.keep(ReminderStore.parse(msg.text), remindersAsked,
+                reminders.items.value, System.currentTimeMillis())
             .map { reminders.add(it.at, it.text) }
             .map { "${ReminderStore.format(it.at)}: ${it.text}" } else emptyList()
         update(id) {
@@ -318,6 +331,7 @@ class ChatRepository(
                 .put("error", m.error).put("appId", m.appId).put("targetAppId", m.targetAppId)
                 .put("time", m.time).put("model", m.model).put("local", m.local)
                 .put("promptTokens", m.promptTokens).put("completionTokens", m.completionTokens)
+                .put("contextTokens", m.contextTokens).put("contextWindow", m.contextWindow)
                 .put("reminders", JSONArray(m.reminders))
                 .put("tools", JSONArray().apply {
                     m.tools.forEach { put(JSONObject().put("id", it.id).put("label", it.label).put("emoji", it.emoji)) }
@@ -338,6 +352,7 @@ class ChatRepository(
                 error = o.str("error"), appId = o.str("appId"), targetAppId = o.str("targetAppId"),
                 time = o.optLong("time"), model = o.str("model"), local = o.optBoolean("local"),
                 promptTokens = o.optInt("promptTokens"), completionTokens = o.optInt("completionTokens"),
+                contextTokens = o.optInt("contextTokens"), contextWindow = o.optInt("contextWindow"),
                 reminders = (0 until (rem?.length() ?: 0)).map { rem!!.getString(it) },
                 tools = (0 until (tools?.length() ?: 0)).map {
                     val t = tools!!.getJSONObject(it)
@@ -366,12 +381,20 @@ class ChatRepository(
             val cost = cloud.sumOf { it.promptTokens * INPUT_USD_PER_MTOK + it.completionTokens * OUTPUT_USD_PER_MTOK } / 1_000_000.0
             val lastReply = session.lastOrNull { it.promptTokens > 0 || it.local }
             val local = lastReply?.local == true
-            val last = if (local || lastReply == null) 0 else contextEstimate(lastReply)
+            val last = when {
+                lastReply == null -> 0
+                lastReply.contextTokens > 0 -> lastReply.contextTokens
+                local -> 0
+                else -> contextEstimate(lastReply)
+            }
             return SessionStats(last, input, output, cost, localManaged = local)
         }
 
         /** A reply's tokens cover every model call of its turn; per call ≈ the conversation's size. */
         fun contextEstimate(m: ChatMessage): Int = m.promptTokens / (m.tools.size + 1)
+
+        /** The PC's real number when we have it, else the estimate. */
+        fun contextSize(m: ChatMessage): Int = if (m.contextTokens > 0) m.contextTokens else contextEstimate(m)
 
         /** "start" / "done" / null for one of Hermes's status lines. */
         fun pcCompactionStep(ev: StreamEvent.Status): String? = when {

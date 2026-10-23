@@ -22,8 +22,9 @@ APPS = TMP / "apps"
 ENV = TMP / ".env"
 KEY = "test-key-" + "x" * 30
 THERMAL = TMP / "thermal"
+CONTEXT = TMP / "context"
 os.environ.update(PROXAI_APPS_DIR=str(APPS), PROXAI_ENV_FILE=str(ENV), PROXAI_APPS_PORT="0",
-                  PROXAI_THERMAL_DIR=str(THERMAL))
+                  PROXAI_THERMAL_DIR=str(THERMAL), PROXAI_CONTEXT_DIR=str(CONTEXT))
 
 spec = importlib.util.spec_from_file_location("apps_server", HERE / "proxai_apps_server.py")
 srv = importlib.util.module_from_spec(spec)
@@ -152,6 +153,22 @@ class AppsServer(unittest.TestCase):
         old = _t.time() - 60
         os.utime(THERMAL / "latest.json", (old, old))
         self.assertFalse(json.loads(self.get("/v1/pc/stats")[1])["watching"])   # watcher stopped
+
+    def test_pc_context(self):
+        self.assertEqual(json.loads(self.get("/v1/pc/context?session=android-a")[1]), {"match": None})
+        CONTEXT.mkdir(exist_ok=True)
+        import time as _t
+        now = _t.strftime("%Y-%m-%dT%H:%M:%S")
+        a = {"session": "android-a", "prompt_tokens": 32662, "context_length": 65536, "time": now}
+        b = {"session": "android-b", "prompt_tokens": 9000, "context_length": 65536, "time": now}
+        (CONTEXT / "sessions.json").write_text(json.dumps({"latest": b, "sessions": {"android-a": a, "android-b": b}}))
+        r = json.loads(self.get("/v1/pc/context?session=android-a")[1])
+        self.assertEqual((r["prompt_tokens"], r["match"]), (32662, "session"))
+        self.assertLessEqual(r["age_s"], 5)
+        r = json.loads(self.get("/v1/pc/context?session=renamed-after-compaction")[1])
+        self.assertEqual((r["session"], r["match"]), ("android-b", "latest"))
+        self.assertEqual(self.get("/v1/pc/context?session=../x%20y")[0], 400)
+        self.assertEqual(self.get("/v1/pc/context?session=android-a", key="wrong")[0], 401)
 
     def test_real_builds_if_given(self):
         if not os.environ.get("APPS_FROM"):

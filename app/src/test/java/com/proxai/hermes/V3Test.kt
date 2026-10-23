@@ -8,6 +8,7 @@ import com.proxai.hermes.data.ModelRoute
 import com.proxai.hermes.data.PcMode
 import com.proxai.hermes.data.PcModeMonitor
 import com.proxai.hermes.data.Prompts
+import com.proxai.hermes.data.Reminder
 import com.proxai.hermes.data.ReminderStore
 import com.proxai.hermes.data.StreamEvent
 import com.proxai.hermes.voice.SpeechController
@@ -200,6 +201,25 @@ class V3Test {
         // Only the cloud reply costs money: 22k * $2/M + 500 * $10/M.
         assertEquals(0.049, s.costUsd, 1e-9)
         assertEquals(3, ChatRepository.sessionMessages(msgs).size)
+    }
+
+    @Test fun remindersAreSetSensibly() {
+        for (p in listOf("remind me in 15 minutes to check the tires", "Set an alarm for 7", "ping me at 5",
+                "don’t let me forget the laundry", "can you set a reminder for tomorrow"))
+            assertTrue(p, ReminderStore.userAsked(p))
+        for (p in listOf("wait until 2am to delete the old one", "What is my GPU temp set", "delete pomodoro app"))
+            assertFalse(p, ReminderStore.userAsked(p))
+        val now = 1_000_000_000L
+        fun p(minutes: Long, text: String) = ReminderStore.Companion.Parsed(now + minutes * 60_000, text)
+        val existing = listOf(Reminder(1, now + 30 * 60_000, "Check on GPU temps"))
+        // 10-23: a reminder for a time already past, and the same one again on the next reply.
+        assertEquals(emptyList<ReminderStore.Companion.Parsed>(),
+            ReminderStore.keep(listOf(p(-600, "Confirmed deletion of Pomodoro Timer"), p(40, "check on gpu temps!")),
+                asked = false, existing = existing, now = now))
+        // Unasked: one per reply. Asked: all of them (still no repeats).
+        val three = listOf(p(10, "Take the pizza out"), p(20, "Call mom"), p(30, "Call mom"))
+        assertEquals(listOf("Take the pizza out"), ReminderStore.keep(three, false, emptyList(), now).map { it.text })
+        assertEquals(listOf("Take the pizza out", "Call mom"), ReminderStore.keep(three, true, emptyList(), now).map { it.text })
     }
 }
 

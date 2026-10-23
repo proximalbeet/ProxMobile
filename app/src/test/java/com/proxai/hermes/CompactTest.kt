@@ -4,6 +4,7 @@ import com.proxai.hermes.data.ChatMessage
 import com.proxai.hermes.data.ChatRepository
 import com.proxai.hermes.data.HermesClient
 import com.proxai.hermes.data.HermesConfig
+import com.proxai.hermes.data.PcContext
 import com.proxai.hermes.data.StreamEvent
 import com.proxai.hermes.data.ToolChip
 import kotlinx.coroutines.flow.toList
@@ -25,6 +26,25 @@ class CompactTest {
         val reply = ChatMessage(role = "assistant", text = "x", promptTokens = 64_000, tools = tools(3))
         assertEquals(16_000, ChatRepository.contextEstimate(reply))
         assertEquals(31_000, ChatRepository.contextEstimate(reply.copy(promptTokens = 31_000, tools = emptyList())))
+    }
+
+    @Test fun realSizeFromThePcWins() {
+        // 10-23: a 4-step local turn showed "126k" though every call read ~32k.
+        val user = ChatMessage(role = "user", text = "hi")
+        val local = ChatMessage(role = "assistant", text = "x", promptTokens = 126_000, tools = tools(3), local = true,
+            contextTokens = 32_662, contextWindow = 65_536)
+        val s = ChatRepository.stats(listOf(user, local))
+        assertTrue(s.localManaged)
+        assertEquals(32_662, s.lastPromptTokens)
+        assertEquals(32_662, ChatRepository.contextSize(local))
+        assertEquals(31_500, ChatRepository.contextSize(local.copy(contextTokens = 0)))
+        assertEquals(PcContext(32662, 65536),
+            PcContext.parse("""{"session":"a","prompt_tokens":32662,"context_length":65536,"match":"session","age_s":900}"""))
+        assertEquals(PcContext(9000, 65536),
+            PcContext.parse("""{"prompt_tokens":9000,"context_length":65536,"match":"latest","age_s":30}"""))
+        assertNull(PcContext.parse("""{"prompt_tokens":9000,"match":"latest","age_s":900}"""))   // someone else's, stale
+        assertNull(PcContext.parse("""{"match":null}"""))
+        assertNull(PcContext.parse("not json"))
     }
 
     @Test fun statsShowLocalAsManagedByThePc() {

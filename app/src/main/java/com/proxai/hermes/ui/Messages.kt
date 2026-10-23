@@ -167,7 +167,12 @@ fun MessageBubble(
                     }
                 }
                 if (!isUser && !msg.streaming && msg.model != null) {
-                    val tokens = if (msg.promptTokens > 0) " · ${formatTokens(msg.promptTokens)} in" else ""
+                    // contextTokens: the conversation's size. promptTokens adds up every step of the turn.
+                    val tokens = when {
+                        msg.contextTokens > 0 -> " · ${formatTokens(msg.contextTokens)} context"
+                        msg.promptTokens > 0 -> " · ${formatTokens(msg.promptTokens)} read"
+                        else -> ""
+                    }
                     Text("${msg.model}$tokens", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }

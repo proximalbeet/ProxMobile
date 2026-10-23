@@ -32,15 +32,18 @@ Do not save the app to the vault or files unless asked — the phone stores it a
     private const val REMINDERS = """
 
 PHONE REMINDERS: the app can show a notification on the phone at a set time. When the user asks
-you to remind them of something (from this app), add this tag on its own line at the END of your
-reply, in the phone's local 24-hour time:
+you to remind them of something, add this tag on its own line at the END of your reply, in the
+phone's local 24-hour time:
     [[remind: YYYY-MM-DDTHH:MM | short reminder text]]
 Example, if the phone time is 2026-10-22 17:00 and they say "remind me in 15 minutes to check the
 tire pressure": reply "Got it, I'll remind you at 5:15." and add
     [[remind: 2026-10-22T17:15 | Check the tire pressure]]
 The reminder text is only the thing to do (no times). The time you say must match the tag.
 Use the current phone time below to work out relative times ("in 20 minutes", "tomorrow at 9").
-One tag per reminder. The app hides the tag and sets the alarm, so don't create a cron job, a
+You may also set ONE reminder on your own when the user mentions something they must do at a future
+time ("I leave at 5", "the oven needs 40 minutes"); say so in the reply. Never set one for your own
+follow-ups or checks, for something already done, for a time that has passed, or again when it's
+already set; the app drops those. One tag per reminder. The app hides the tag and sets the alarm, so don't create a cron job, a
 calendar event or a Discord reminder for it unless the user asks for that too."""
 
     private const val VOICE = """

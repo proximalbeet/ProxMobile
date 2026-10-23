@@ -98,7 +98,35 @@ class ReminderStore(private val context: Context) {
             "\\[\\[\\s*remind(?:er)?\\s*:?\\s*(\\d{4}-\\d{2}-\\d{2}[T ]\\d{1,2}:\\d{2}(?::\\d{2})?)\\s*\\|\\s*([^\\]]+?)\\s*\\]\\]",
             RegexOption.IGNORE_CASE)
 
+        /** Did Nathan's message ask for a reminder? Tags in replies to anything else are ignored. */
+        private val ASKED = Regex(
+            "\\b(remind(er|ers)?|alarm|alert me|ping me|notify me|nudge me|wake me|don'?t let me forget|" +
+                "make sure i (remember|don'?t forget))\\b", RegexOption.IGNORE_CASE)
+
+        fun userAsked(prompt: String): Boolean = ASKED.containsMatchIn(prompt.replace('’', '\''))
+
         data class Parsed(val at: Long, val text: String)
+
+        private fun same(a: String, b: String) =
+            a.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim() == b.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+        /**
+         * Which reminder tags to actually set. ProxAI may set reminders on its own, but on 10-23 it set
+         * them for times already past and repeated them every reply. Rules: no times already past (unasked:
+         * at least a minute ahead); no repeat of a reminder that's already set (or twice in one reply); and when
+         * Nathan didn't ask for a reminder, at most one per reply.
+         */
+        fun keep(parsed: List<Parsed>, asked: Boolean, existing: List<Reminder>, now: Long): List<Parsed> {
+            val out = mutableListOf<Parsed>()
+            for (p in parsed) {
+                // "remind me in a minute" can land a few seconds late; an unasked one must be ahead.
+                if (p.at < now + if (asked) -60_000 else 60_000) continue
+                if (existing.any { it.at > now && same(it.text, p.text) }) continue
+                if (out.any { same(it.text, p.text) }) continue
+                out += p
+            }
+            return if (asked) out else out.take(1)
+        }
 
         /** Reminder tags in [reply], with local times turned into epoch millis. */
         fun parse(reply: String, zone: ZoneId = ZoneId.systemDefault()): List<Parsed> =

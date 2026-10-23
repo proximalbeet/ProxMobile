@@ -81,6 +81,25 @@ class PcStatsClient(private val config: HermesConfig) {
     fun stats(): String = get("/v1/pc/stats")
 
     fun alertsAfter(id: Int): List<PcAlert> = PcAlert.parseList(get("/v1/pc/alerts?after=$id"))
+
+    /** The conversation's real size on the PC (latest model call), or null if unknown. */
+    fun context(session: String): PcContext? = PcContext.parse(get("/v1/pc/context?session=" +
+        java.net.URLEncoder.encode(session, "UTF-8")))
+}
+
+/** What the model actually read on its latest call, from Hermes's proxai-context plugin. */
+data class PcContext(val tokens: Int, val window: Int) {
+    companion object {
+        /** A session match, or the newest call when Hermes renamed the session (compaction) and it's fresh. */
+        fun parse(body: String): PcContext? = runCatching {
+            val o = org.json.JSONObject(body)
+            val match = o.optString("match")
+            val fresh = o.has("age_s") && !o.isNull("age_s") && o.optInt("age_s", 9999) <= 120
+            val tokens = o.optInt("prompt_tokens")
+            if (tokens <= 0 || (match != "session" && !(match == "latest" && fresh))) null
+            else PcContext(tokens, o.optInt("context_length"))
+        }.getOrNull()
+    }
 }
 
 /** Checks the PC for new alerts about every 15 minutes (Android's minimum while the app is closed). */

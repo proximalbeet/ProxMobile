@@ -13,6 +13,8 @@ Runs with the system python3 (standard library only).
   GET /v1/apps/<id>/apk                latest APK      (?code=N for an older build)
   GET /v1/pc/stats                     the PC's current reading + last hour (per minute) + recent alerts
   GET /v1/pc/alerts?after=N            alerts with id > N (ProxMobile's background check)
+  GET /v1/pc/context?session=ID        the conversation's real size: the latest model call's prompt tokens
+                                       (Hermes plugin proxai-context, ~/.local/state/proxai/context)
 
 The /v1/pc routes read the thermal watch's files (proxai_thermal_watch.py: latest.json,
 <date>.csv, alerts.jsonl in ~/.local/state/proxai/thermal-watch), also read-only.
@@ -35,7 +37,9 @@ ENV_FILE = Path(os.getenv("PROXAI_ENV_FILE", "~/.hermes/profiles/proxai/.env")).
 HOST = os.getenv("PROXAI_APPS_HOST", "127.0.0.1")
 PORT = int(os.getenv("PROXAI_APPS_PORT", "8654"))
 THERMAL = Path(os.getenv("PROXAI_THERMAL_DIR", "~/.local/state/proxai/thermal-watch")).expanduser()
+CONTEXT = Path(os.getenv("PROXAI_CONTEXT_DIR", "~/.local/state/proxai/context")).expanduser()
 STALE_SECS = 15
+SESSION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
 APK_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}-[0-9][0-9A-Za-z.\-]{0,19}-[0-9]{1,6}\.apk$")
 
@@ -198,6 +202,25 @@ def pc_stats() -> dict:
             "history": pc_history(), "alerts": pc_alerts()[-10:]}
 
 
+def pc_context(session: str) -> dict:
+    """The session's latest model call. Hermes renames a session when it compacts, so an unknown id
+    falls back to the newest phone call (marked match=latest)."""
+    d = read_json(CONTEXT / "sessions.json", {}) or {}
+
+    def aged(rec: dict, match: str) -> dict:
+        try:
+            age = round(time.time() - time.mktime(time.strptime(rec["time"], "%Y-%m-%dT%H:%M:%S")))
+        except (KeyError, TypeError, ValueError):
+            age = None
+        return {**rec, "match": match, "age_s": age}
+
+    rec = (d.get("sessions") or {}).get(session)
+    if isinstance(rec, dict):
+        return aged(rec, "session")
+    latest = d.get("latest")
+    return aged(latest, "latest") if isinstance(latest, dict) else {"match": None}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProxAIApps/1"
 
@@ -237,6 +260,11 @@ class Handler(BaseHTTPRequestHandler):
             if not after.isdigit():
                 return self._json(400, {"error": "after must be a number"})
             return self._json(200, {"alerts": pc_alerts(int(after))})
+        if parts == ["v1", "pc", "context"]:
+            session = parse_qs(url.query).get("session", [""])[0]
+            if not SESSION_RE.match(session):
+                return self._json(400, {"error": "session must be a session id"})
+            return self._json(200, pc_context(session))
         if parts[:2] != ["v1", "apps"]:
             return self._json(404, {"error": "not found"})
         if len(parts) == 2:
