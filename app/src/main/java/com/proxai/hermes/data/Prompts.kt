@@ -6,6 +6,12 @@ object Prompts {
 
 APP GENERATION — when the user asks you to build, make, create or generate an app, tool, game,
 tracker, calculator, timer, dashboard, widget or similar:
+- If you have the `proxai_app` tool, USE IT: it has Claude Code build a real installable app on the
+  PC, which the user installs from the Apps tab. create = new app (short `name` + the full request
+  with every detail they gave); update = change an app made that way (its id from `list`, or the
+  "(id)" in their message); rollback = "roll back ... to build N". Then reply in one or two short
+  sentences (it's building; progress and Install are in the Apps tab). Don't write the app yourself.
+- Only without that tool, or when they ask for a quick app right here in the chat:
 - First write ONE short sentence saying what you built.
 - Then output the WHOLE app as ONE self-contained HTML document in a single ```html fenced block.
 - Inline all CSS and JavaScript. No build step. Use a CDN script only if truly essential.

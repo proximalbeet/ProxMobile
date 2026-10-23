@@ -25,6 +25,15 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.4.0", "2026-10-22", listOf(
+            "Apps tab → \"Built on your PC\": ask ProxAI for an app and Claude Code builds a real app " +
+                "(its own icon and APK) on the PC; progress shows here while it builds",
+            "Install / Update / Open buttons; Android asks before every install. The first install " +
+                "remembers the ProxAI apps signing key and refuses APKs signed with any other",
+            "Versions: every build is kept; \"Roll back\" asks ProxAI to rebuild an older version as an update",
+            "\"Change with ProxAI\" sends a change request for that app",
+            "Needs the PC side: Hermes proxai_app tool + apps server (docs/PROXAI-APPS.md)",
+        )),
         Release("0.3.2", "2026-10-22", listOf(
             "Kanye voice no longer gives up after one error: a failed sentence is retried once, " +
                 "and if it still fails only that sentence uses the phone voice",

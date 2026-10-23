@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- v0.4: install apps ProxAI built on the PC (Android still asks before each install) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <intent>
@@ -18,6 +20,11 @@
         </intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- v0.4: see which ProxAI-built apps are installed (and their versions) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -137,5 +144,6 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <receiver android:name=".data.InstallResultReceiver" android:exported="false" />
     </application>
 </manifest>

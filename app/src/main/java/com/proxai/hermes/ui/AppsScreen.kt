@@ -71,21 +71,22 @@ fun AppsScreen(onOpenApp: (String) -> Unit, onRemixApp: (String) -> Unit, onBuil
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             TopAppBar(colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent), title = { Text("Your apps", fontWeight = FontWeight.SemiBold) })
-            if (apps.isEmpty()) {
-                Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No apps yet", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Ask ProxAI to build one — e.g. “make me a habit tracker”. It's saved here automatically, and you can pin it to your home screen.",
-                        textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(16.dp))
-                    APP_IDEAS.drop(2).take(3).forEach { idea ->
-                        TextButton(onClick = { onBuildNew(idea) }) { Text(idea) }
+            LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item("pc-apps") { PcAppsSection(onAskProxAI = onBuildNew) }
+                if (apps.isEmpty()) {
+                    item("empty") {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Quick apps made in the chat are kept here. You can pin them to your home screen.",
+                                textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(12.dp))
+                            APP_IDEAS.drop(2).take(3).forEach { idea ->
+                                TextButton(onClick = { onBuildNew(idea) }) { Text(idea) }
+                            }
+                        }
                     }
-                }
-            } else {
-                LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                } else {
                     items(apps, key = { it.id }) { a ->
                         AppRow(a,
                             onOpen = { onOpenApp(a.id) },

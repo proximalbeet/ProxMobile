@@ -6,6 +6,7 @@ import android.os.Bundle
 import com.proxai.hermes.data.AppStore
 import com.proxai.hermes.data.ChatRepository
 import com.proxai.hermes.data.HermesClient
+import com.proxai.hermes.data.PcAppsRepo
 import com.proxai.hermes.data.PcModeMonitor
 import com.proxai.hermes.data.ReminderStore
 import com.proxai.hermes.data.Settings
@@ -23,6 +24,8 @@ class ProxApp : Application() {
     lateinit var pcMode: PcModeMonitor
     lateinit var reminders: ReminderStore
     lateinit var chat: ChatRepository
+    /** Apps ProxAI built on the PC as APKs (Phase 15). */
+    lateinit var pcApps: PcAppsRepo
 
     /** Activities currently on screen; 0 = the app is in the background. */
     private var started = 0
@@ -36,6 +39,7 @@ class ProxApp : Application() {
         apps = AppStore(this)
         pcMode = PcModeMonitor(settings)
         reminders = ReminderStore(this)
+        pcApps = PcAppsRepo(this, settings, scope)
         chat = ChatRepository(this, settings, hermes, apps, pcMode, reminders, scope) { inForeground }
         Notifier.createChannels(this)
         // Alarms are dropped when the app is updated; set them again.
