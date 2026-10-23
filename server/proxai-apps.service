@@ -18,5 +18,5 @@ ProtectHome=tmpfs
 PrivateTmp=yes
 # Socket activation hands over the listening socket, so the server needs no network of its own.
 PrivateNetwork=yes
-BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch -%h/.local/state/proxai/context
+BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch -%h/.local/state/proxai/context -%h/.local/state/proxai/notices
 InaccessiblePaths=-%h/dev/proxai/apps/.signing

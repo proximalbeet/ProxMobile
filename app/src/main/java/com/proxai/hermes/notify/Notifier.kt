@@ -22,6 +22,7 @@ object Notifier {
     const val CH_REPLIES = "replies"
     const val CH_PC = "pc-alerts"
     const val CH_PC_CRIT = "pc-alerts-critical"
+    const val CH_NOTICES = "pc-notices"
     private const val REPLY_ID = 1
 
     fun createChannels(context: Context) {
@@ -32,8 +33,24 @@ object Notifier {
             .apply { description = "ProxAI finished answering while the app was closed" })
         nm.createNotificationChannel(NotificationChannel(CH_PC, "PC alerts", NotificationManager.IMPORTANCE_DEFAULT)
             .apply { description = "The PC ran hot or short on memory (warnings)" })
+        nm.createNotificationChannel(NotificationChannel(CH_NOTICES, "PC notices", NotificationManager.IMPORTANCE_DEFAULT)
+            .apply { description = "Scheduled jobs' results, apps ready to install, wiki updates waiting" })
         nm.createNotificationChannel(NotificationChannel(CH_PC_CRIT, "PC critical alerts", NotificationManager.IMPORTANCE_HIGH)
             .apply { description = "The PC hit a critical temperature; it protects itself (unloads the local model)" })
+    }
+
+    @Suppress("MissingPermission")
+    fun pcNotice(context: Context, n: com.proxai.hermes.data.PcNotice) {
+        if (!canPost(context) || n.title.isBlank()) return
+        val notification = NotificationCompat.Builder(context, CH_NOTICES)
+            .setSmallIcon(R.drawable.ic_tile)
+            .setContentTitle(n.title)
+            .setContentText(n.text.take(120))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(n.text.take(1500)))
+            .setContentIntent(openChat(context, 4))
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(context).notify(300_000 + n.id, notification)
     }
 
     fun pcAlert(context: Context, a: com.proxai.hermes.data.PcAlert) {

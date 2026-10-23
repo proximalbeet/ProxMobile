@@ -82,9 +82,35 @@ class PcStatsClient(private val config: HermesConfig) {
 
     fun alertsAfter(id: Int): List<PcAlert> = PcAlert.parseList(get("/v1/pc/alerts?after=$id"))
 
+    fun noticesAfter(id: Int): List<PcNotice> = PcNotice.parseList(get("/v1/pc/notices?after=$id"))
+
     /** The conversation's real size on the PC (latest model call), or null if unknown. */
     fun context(session: String): PcContext? = PcContext.parse(get("/v1/pc/context?session=" +
         java.net.URLEncoder.encode(session, "UTF-8")))
+}
+
+/** A notice from the PC (Hermes proxai-schedule's feed): scheduled-job results, app ready, wiki waiting. */
+data class PcNotice(val id: Int, val time: String, val kind: String, val title: String, val text: String) {
+    companion object {
+        fun parseList(json: String): List<PcNotice> {
+            val arr = JSONObject(json).optJSONArray("notices") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let {
+                    PcNotice(it.optInt("id"), it.optString("time"), it.optString("kind"), it.optString("title"), it.optString("text"))
+                }
+            }
+        }
+
+        /** Same rule as alerts: the very first check shows only the last 30 minutes. */
+        fun toNotify(notices: List<PcNotice>, lastSeen: Int, now: LocalDateTime): Pair<List<PcNotice>, Int> {
+            val newest = notices.maxOfOrNull { it.id } ?: lastSeen
+            val fresh = notices.filter { it.id > lastSeen }
+            val show = if (lastSeen > 0) fresh else fresh.filter {
+                try { LocalDateTime.parse(it.time).isAfter(now.minusMinutes(30)) } catch (e: DateTimeParseException) { false }
+            }
+            return show to maxOf(newest, lastSeen)
+        }
+    }
 }
 
 /** What the model actually read on its latest call, from Hermes's proxai-context plugin. */
@@ -102,16 +128,25 @@ data class PcContext(val tokens: Int, val window: Int) {
     }
 }
 
-/** Checks the PC for new alerts about every 15 minutes (Android's minimum while the app is closed). */
+/** Checks the PC for new alerts and notices about every 15 minutes (Android's minimum while the app is closed). */
 class PcAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val settings = ProxApp.instance.settings
-        if (!settings.pcAlerts || !settings.isConfigured) return Result.success()
+        if (!(settings.pcAlerts || settings.pcNotices) || !settings.isConfigured) return Result.success()
         return try {
-            val (show, last) = PcAlert.toNotify(
-                PcStatsClient(settings).alertsAfter(settings.lastPcAlertId), settings.lastPcAlertId, LocalDateTime.now())
-            show.takeLast(5).forEach { Notifier.pcAlert(applicationContext, it) }
-            settings.lastPcAlertId = last
+            val client = PcStatsClient(settings)
+            if (settings.pcAlerts) {
+                val (show, last) = PcAlert.toNotify(client.alertsAfter(settings.lastPcAlertId), settings.lastPcAlertId,
+                    LocalDateTime.now())
+                show.takeLast(5).forEach { Notifier.pcAlert(applicationContext, it) }
+                settings.lastPcAlertId = last
+            }
+            if (settings.pcNotices) {
+                val (show, last) = PcNotice.toNotify(client.noticesAfter(settings.lastPcNoticeId), settings.lastPcNoticeId,
+                    LocalDateTime.now())
+                show.takeLast(8).forEach { Notifier.pcNotice(applicationContext, it) }
+                settings.lastPcNoticeId = last
+            }
             Result.success()
         } catch (e: IOException) {
             Result.success()   // PC off or away from the tailnet: try again next round
@@ -123,7 +158,8 @@ class PcAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
 
         fun schedule(ctx: Context) {
             val wm = WorkManager.getInstance(ctx)
-            if (!ProxApp.instance.settings.pcAlerts) {
+            val s = ProxApp.instance.settings
+            if (!s.pcAlerts && !s.pcNotices) {
                 wm.cancelUniqueWork(NAME)
                 return
             }
@@ -134,7 +170,8 @@ class PcAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
 
         /** An extra check right away (app opened). */
         fun checkNow(ctx: Context) {
-            if (ProxApp.instance.settings.pcAlerts) {
+            val s = ProxApp.instance.settings
+            if (s.pcAlerts || s.pcNotices) {
                 WorkManager.getInstance(ctx).enqueue(OneTimeWorkRequestBuilder<PcAlertWorker>().build())
             }
         }

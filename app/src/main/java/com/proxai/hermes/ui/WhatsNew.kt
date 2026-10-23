@@ -25,6 +25,12 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.6.3", "2026-10-23", listOf(
+            "Scheduled jobs: \"every morning at 8 summarize my calendar\", \"delete the old app at 2am\". ProxAI asks " +
+                "first; your yes also approves the action. Say \"what's scheduled\" or \"cancel the … job\"",
+            "Notices from the PC as notifications: scheduled-job results, \"your app is ready\", wiki updates " +
+                "(Settings → Notifications)",
+        )),
         Release("0.6.2", "2026-10-23", listOf(
             "Apps built on your PC: ProxAI asks before it builds, changes or rolls back an app; only your yes " +
                 "starts it",

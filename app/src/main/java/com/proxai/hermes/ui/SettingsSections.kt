@@ -178,6 +178,16 @@ fun NotificationsSection() {
             com.proxai.hermes.data.PcAlertWorker.schedule(ctx)
         })
     }
+    var pcNotices by remember { mutableStateOf(s.pcNotices) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Notices from the PC (scheduled jobs, apps ready, wiki updates)", Modifier.weight(1f))
+        Switch(pcNotices, {
+            pcNotices = it; s.pcNotices = it
+            com.proxai.hermes.data.PcAlertWorker.schedule(ctx)
+        })
+    }
+    Hint("Scheduled jobs: say \"every morning at 8 summarize my calendar\" or \"delete the old app at 2am\". " +
+        "ProxAI asks first; your yes also approves the action. Results arrive here as notices.")
     Hint("The PC watches itself every second and unloads the local model if the GPU gets critical. " +
         "The phone checks for its alerts about every 15 minutes (Android's limit while ProxAI is closed) " +
         "and right away when you open ProxAI.")

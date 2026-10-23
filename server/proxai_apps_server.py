@@ -13,6 +13,8 @@ Runs with the system python3 (standard library only).
   GET /v1/apps/<id>/apk                latest APK      (?code=N for an older build)
   GET /v1/pc/stats                     the PC's current reading + last hour (per minute) + recent alerts
   GET /v1/pc/alerts?after=N            alerts with id > N (ProxMobile's background check)
+  GET /v1/pc/notices?after=N           PC notices with id > N: scheduled-job results, app ready, wiki
+                                       waiting... (Hermes plugin proxai-schedule, ~/.local/state/proxai/notices)
   GET /v1/pc/context?session=ID        the conversation's real size: the latest model call's prompt tokens
                                        (Hermes plugin proxai-context, ~/.local/state/proxai/context)
 
@@ -38,6 +40,7 @@ HOST = os.getenv("PROXAI_APPS_HOST", "127.0.0.1")
 PORT = int(os.getenv("PROXAI_APPS_PORT", "8654"))
 THERMAL = Path(os.getenv("PROXAI_THERMAL_DIR", "~/.local/state/proxai/thermal-watch")).expanduser()
 CONTEXT = Path(os.getenv("PROXAI_CONTEXT_DIR", "~/.local/state/proxai/context")).expanduser()
+NOTICES = Path(os.getenv("PROXAI_NOTICES_DIR", "~/.local/state/proxai/notices")).expanduser()
 STALE_SECS = 15
 SESSION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
@@ -202,6 +205,18 @@ def pc_stats() -> dict:
             "history": pc_history(), "alerts": pc_alerts()[-10:]}
 
 
+def pc_notices(after: int = 0, limit: int = 50) -> list[dict]:
+    out = []
+    for line in _tail_lines(NOTICES / "notices.jsonl", 512 * 1024):
+        try:
+            n = json.loads(line)
+            if int(n.get("id", 0)) > after:
+                out.append({k: n.get(k) for k in ("id", "time", "kind", "title", "text")})
+        except (ValueError, TypeError):
+            continue
+    return out[-limit:]
+
+
 def pc_context(session: str) -> dict:
     """The session's latest model call. Hermes renames a session when it compacts, so an unknown id
     falls back to the newest phone call (marked match=latest)."""
@@ -260,6 +275,11 @@ class Handler(BaseHTTPRequestHandler):
             if not after.isdigit():
                 return self._json(400, {"error": "after must be a number"})
             return self._json(200, {"alerts": pc_alerts(int(after))})
+        if parts == ["v1", "pc", "notices"]:
+            after = parse_qs(url.query).get("after", ["0"])[0]
+            if not after.isdigit():
+                return self._json(400, {"error": "after must be a number"})
+            return self._json(200, {"notices": pc_notices(int(after))})
         if parts == ["v1", "pc", "context"]:
             session = parse_qs(url.query).get("session", [""])[0]
             if not SESSION_RE.match(session):

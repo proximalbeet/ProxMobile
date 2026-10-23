@@ -23,8 +23,9 @@ ENV = TMP / ".env"
 KEY = "test-key-" + "x" * 30
 THERMAL = TMP / "thermal"
 CONTEXT = TMP / "context"
+NOTICES = TMP / "notices"
 os.environ.update(PROXAI_APPS_DIR=str(APPS), PROXAI_ENV_FILE=str(ENV), PROXAI_APPS_PORT="0",
-                  PROXAI_THERMAL_DIR=str(THERMAL), PROXAI_CONTEXT_DIR=str(CONTEXT))
+                  PROXAI_THERMAL_DIR=str(THERMAL), PROXAI_CONTEXT_DIR=str(CONTEXT), PROXAI_NOTICES_DIR=str(NOTICES))
 
 spec = importlib.util.spec_from_file_location("apps_server", HERE / "proxai_apps_server.py")
 srv = importlib.util.module_from_spec(spec)
@@ -153,6 +154,16 @@ class AppsServer(unittest.TestCase):
         old = _t.time() - 60
         os.utime(THERMAL / "latest.json", (old, old))
         self.assertFalse(json.loads(self.get("/v1/pc/stats")[1])["watching"])   # watcher stopped
+
+    def test_pc_notices(self):
+        self.assertEqual(json.loads(self.get("/v1/pc/notices?after=0")[1]), {"notices": []})
+        NOTICES.mkdir(exist_ok=True)
+        (NOTICES / "notices.jsonl").write_text("".join(json.dumps(
+            {"id": i, "time": "t", "kind": "app", "title": f"n{i}", "text": "x"}) + "\n" for i in (1, 2, 3)) + "junk\n")
+        r = json.loads(self.get("/v1/pc/notices?after=1")[1])
+        self.assertEqual([n["title"] for n in r["notices"]], ["n2", "n3"])
+        self.assertEqual(self.get("/v1/pc/notices?after=x")[0], 400)
+        self.assertEqual(self.get("/v1/pc/notices", key="wrong")[0], 401)
 
     def test_pc_context(self):
         self.assertEqual(json.loads(self.get("/v1/pc/context?session=android-a")[1]), {"match": None})

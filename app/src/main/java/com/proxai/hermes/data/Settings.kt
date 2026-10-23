@@ -99,6 +99,16 @@ class Settings(context: Context) : HermesConfig {
         get() = prefs.getBoolean("pc_alerts", true)
         set(v) = prefs.edit().putBoolean("pc_alerts", v).apply()
 
+    /** Notify about the PC's notices: scheduled-job results, "your app is ready", wiki updates. */
+    var pcNotices: Boolean
+        get() = prefs.getBoolean("pc_notices", true)
+        set(v) = prefs.edit().putBoolean("pc_notices", v).apply()
+
+    /** Newest PC notice already shown (numbered on the PC). */
+    var lastPcNoticeId: Int
+        get() = prefs.getInt("last_pc_notice_id", 0)
+        set(v) = prefs.edit().putInt("last_pc_notice_id", v).apply()
+
     /** Newest PC alert already shown (alerts are numbered on the PC). */
     var lastPcAlertId: Int
         get() = prefs.getInt("last_pc_alert_id", 0)

@@ -1,6 +1,7 @@
 package com.proxai.hermes
 
 import com.proxai.hermes.data.PcAlert
+import com.proxai.hermes.data.PcNotice
 import com.proxai.hermes.data.PcStatsProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,6 +35,22 @@ class PcStatsTest {
         val (none, same) = PcAlert.toNotify(emptyList(), 8, now)
         assertEquals(emptyList<PcAlert>(), none)
         assertEquals(8, same)
+    }
+
+    @Test fun parsesNoticesAndShowsOnlyNewOnes() {
+        val json = """{"notices":[{"id":4,"time":"2026-10-23T14:00:00","kind":"schedule","title":"⏰ check the PC temps",
+            "text":"GPU 41 °C"},{"id":5,"time":"2026-10-23T14:20:00","kind":"app","title":"📱 Pong is ready","text":"Install it"}]}"""
+        val n = PcNotice.parseList(json)
+        assertEquals(listOf("⏰ check the PC temps", "📱 Pong is ready"), n.map { it.title })
+        val now = LocalDateTime.of(2026, 10, 23, 14, 30)
+        // First check ever: only the last 30 minutes, so installing doesn't replay old notices.
+        val (first, last) = PcNotice.toNotify(n, 0, now)
+        assertEquals(listOf(5), first.map { it.id })
+        assertEquals(5, last)
+        val (later, last2) = PcNotice.toNotify(n, 4, now)
+        assertEquals(listOf(5), later.map { it.id })
+        assertEquals(5, last2)
+        assertTrue(PcNotice.parseList("""{"notices":[]}""").isEmpty())
     }
 
     @Test fun onlyProxAiAppsWithThePinnedKeyGetStats() {
