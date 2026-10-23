@@ -1,0 +1,10 @@
+[Unit]
+Description=ProxAI apps server socket (APK list + downloads for ProxMobile)
+Documentation=file://%h/dev/projects/ProxMobile/docs/PROXAI-APPS.md
+
+[Socket]
+ListenStream=127.0.0.1:8654
+Backlog=32
+
+[Install]
+WantedBy=sockets.target
