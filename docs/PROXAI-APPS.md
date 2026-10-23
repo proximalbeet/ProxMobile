@@ -34,7 +34,7 @@ build itself needs no network at all.
 | **Sandbox image** `proxai-sandbox:2.1.302-apps` | Hermes `sandbox/build-image.sh` | The live container image + Java 17, Android build-tools 35, android-35, the shell kit and the builder (copied from `~/Android`, nothing downloaded) | ✅ built; **not live** (config still uses `2.1.302`) |
 | **Hermes app plugin** `proxai_app` | Hermes `plugins/proxai-apps/` | create / update / rollback / status / list, phone + PC terminal only. Starts Claude Code in the background (one build at a time) with fixed instructions (`/opt/proxai-shell/GUIDE.md` in the image), returns at once | ✅ built, 12 tests + a real end-to-end build |
 | **Apps server** | ProxMobile `server/proxai_apps_server.py` | Read-only: lists apps + progress, serves APKs, API key required; socket-activated, sandboxed (signing key hidden, no network), tailnet `/apps` | ✅ built, 9 tests + sandbox check; **not installed** |
-| **Apps tab** (ProxMobile 0.4.0) | ProxMobile `ui/PcAppsSection.kt`, `data/PcApps.kt`, `data/AppInstaller.kt` | "Built on your PC": progress while building, Install / Update / Open, Versions + Roll back, Change with ProxAI; checks SHA-256 and pins the signing key | ✅ built, 33 app tests; APK `~/Downloads/ProxAI-0.4.0.apk` |
+| **Apps tab** (ProxMobile 0.4.0) | ProxMobile `ui/PcAppsSection.kt`, `data/PcApps.kt`, `data/AppInstaller.kt` | "Built on your PC": progress while building, Install / Update / Open, Versions + Roll back, Change with ProxAI; checks SHA-256 and pins the signing key | ✅ built, 33 app tests; APK `~/Downloads/ProxAI-0.4.1.apk` |
 | **`ProxAI.ask` for installed apps** | ProxMobile | Lets a generated app ask ProxAI through ProxMobile (which holds the key), only for apps signed with the generated-apps key | ⏳ |
 
 ## Tech stack
@@ -116,7 +116,7 @@ docker rm -f $(docker ps -q --filter name=hermes-)                         # nex
 systemctl --user restart hermes-gateway-proxai proxai-phone-voice
 ~/dev/projects/ProxMobile/scripts/install-apps-service.sh                  # apps server + tailnet /apps
 ```
-Then install `ProxAI-0.4.0.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
+Then install `ProxAI-0.4.1.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
 The image `proxai-sandbox:2.1.302-apps` is already built on the PC; to rebuild it later:
 `./gradlew :appshell:shellKit` (ProxMobile), then `sandbox/build-image.sh` (Hermes).
 

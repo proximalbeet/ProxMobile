@@ -25,6 +25,9 @@ sealed interface StreamEvent {
     data object Thinking : StreamEvent
     data class Tool(val id: String, val label: String, val emoji: String, val running: Boolean) : StreamEvent
     data class Done(val sessionId: String?, val usage: Usage? = null, val model: String? = null) : StreamEvent
+    /** Hermes's own status lines (`hermes.status`), e.g. "🗜️ Compacting context — …" while it
+     *  compacts the session on the PC, then kind "compacted" when it's done. */
+    data class Status(val kind: String, val text: String) : StreamEvent
     data class Error(val message: String) : StreamEvent
 }
 
@@ -91,6 +94,10 @@ class HermesClient(private val settings: HermesConfig) {
                             usage = Usage(it.optInt("prompt_tokens"), it.optInt("completion_tokens"))
                         }
                         json.optString("model").takeIf { it.isNotBlank() }?.let { model = it }
+                        if (ev == "hermes.status") {
+                            send(StreamEvent.Status(json.optString("kind"), json.optString("text")))
+                            return
+                        }
                         if (ev == "hermes.tool.progress") {
                             thinking = false
                             send(StreamEvent.Tool(

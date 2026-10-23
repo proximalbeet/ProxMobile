@@ -137,16 +137,19 @@ fun ChatScreen(
                             else "not connected — open Settings",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1)
-                        if (stats.lastPromptTokens > 0) {
+                        if (stats.localManaged) {
+                            Text("context managed by the PC (compacts at ~56k)",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else if (stats.lastPromptTokens > 0) {
                             val cost = if (stats.costUsd > 0) " · this session ≤ $" + "%.2f".format(stats.costUsd) else ""
-                            Text("context ${formatTokens(stats.lastPromptTokens)}$cost",
+                            Text("context ~${formatTokens(stats.lastPromptTokens)}$cost",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             },
             actions = {
-                IconButton(onClick = { repo.compact() }, enabled = !busy && stats.lastPromptTokens > 0) {
+                IconButton(onClick = { repo.compact() }, enabled = !busy && (stats.lastPromptTokens > 0 || stats.localManaged)) {
                     Icon(Icons.Outlined.UnfoldLess, "Compact the conversation")
                 }
                 IconButton(onClick = { repo.newChat() }) { Icon(Icons.Outlined.AddComment, "New chat") }

@@ -193,7 +193,9 @@ class V3Test {
             ChatMessage(role = "assistant", text = "c", promptTokens = 21_000, completionTokens = 100, local = true),
         )
         val s = ChatRepository.stats(msgs)
-        assertEquals(21_000, s.lastPromptTokens)
+        // 0.4.1: the last reply was local, so the size is the PC's to track (no app estimate).
+        assertTrue(s.localManaged)
+        assertEquals(0, s.lastPromptTokens)
         assertEquals(43_000L, s.inputTokens)
         // Only the cloud reply costs money: 22k * $2/M + 500 * $10/M.
         assertEquals(0.049, s.costUsd, 1e-9)

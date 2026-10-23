@@ -48,7 +48,15 @@ data class ChatMessage(
 data class ReplyDone(val message: ChatMessage, val fromVoice: Boolean)
 
 /** Size and rough cost of the current Hermes session, from the usage Hermes reports. */
-data class SessionStats(val lastPromptTokens: Int, val inputTokens: Long, val outputTokens: Long, val costUsd: Double)
+data class SessionStats(
+    /** Estimated conversation size from the last cloud reply (tokens per model call). */
+    val lastPromptTokens: Int,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val costUsd: Double,
+    /** The last reply came from the PC's local model: Hermes tracks the size and compacts. */
+    val localManaged: Boolean = false,
+)
 
 /**
  * One conversation shared by the main app and the power-button overlay. The request runs in
@@ -144,6 +152,7 @@ class ChatRepository(
                     }
                     is StreamEvent.Error -> failed = ev.message
                     is StreamEvent.Done -> { usage = ev.usage; answeredBy = ev.model }
+                    is StreamEvent.Status -> onPcStatus(ev)
                 }
             }
             if (failed == null && carry.isNotBlank()) settings.carryOver = ""
@@ -153,7 +162,8 @@ class ChatRepository(
                 it.copy(model = label, promptTokens = usage?.promptTokens ?: 0, completionTokens = usage?.completionTokens ?: 0)
             }
             finish(reply.id, failed, target?.id, fromVoice)
-            maybeAutoCompact(usage)
+            endPcCompaction(done = failed == null)
+            maybeAutoCompact(route, _messages.value.firstOrNull { it.id == reply.id })
             sendQueued()
         }
         job?.invokeOnCompletion { cause ->
@@ -183,9 +193,45 @@ class ChatRepository(
 
     // ---- auto-compact ----------------------------------------------------------------------------
 
-    private fun maybeAutoCompact(usage: Usage?) {
+    /**
+     * Limits are unchanged (cloud: Settings → Context, default 60k; local: Hermes's own 85% of the
+     * 64k window, ~56k). Only the measuring changed (0.4.1):
+     * - Local model: the app never compacts by itself. The local model reports only newly read
+     *   tokens (it reuses what it read before), so the app can't see the real size; Hermes can, and
+     *   compacts on the PC, which [onPcStatus] shows.
+     * - Cloud: a reply's token count adds up every model call of the turn, so tool-heavy replies
+     *   looked huge. It's divided by the calls (tools used + 1) to estimate the conversation size.
+     */
+    private fun maybeAutoCompact(route: ModelRoute, reply: ChatMessage?) {
         val limit = settings.compactAtTokens
-        if (limit > 0 && (usage?.promptTokens ?: 0) >= limit) compact(auto = true)
+        if (limit <= 0 || route.local || reply == null) return
+        if (contextEstimate(reply) >= limit) compact(auto = true)
+    }
+
+    // ---- compaction done by Hermes on the PC ------------------------------------------------------
+
+    private var pcNoteId: String? = null
+
+    private fun onPcStatus(ev: StreamEvent.Status) {
+        when (pcCompactionStep(ev)) {
+            "start" -> if (pcNoteId == null) {
+                val note = ChatMessage(role = "note", text = "Compacting the conversation on the PC…", streaming = true)
+                pcNoteId = note.id
+                _messages.value = _messages.value + note
+            }
+            "done" -> endPcCompaction(done = true)
+        }
+    }
+
+    private fun endPcCompaction(done: Boolean) {
+        val id = pcNoteId ?: return
+        pcNoteId = null
+        update(id) {
+            it.copy(streaming = false, text = if (done)
+                "The PC compacted the conversation: ProxAI summarized the earlier part and keeps going from that summary."
+            else "Compacting on the PC was interrupted.")
+        }
+        persist()
     }
 
     /**
@@ -210,7 +256,7 @@ class ChatRepository(
                 } else {
                     settings.newSession()
                     settings.carryOver = clean
-                    val why = if (auto) "The last reply read ${stats.lastPromptTokens / 1000}k tokens, so the conversation was compacted."
+                    val why = if (auto) "The conversation reached about ${stats.lastPromptTokens / 1000}k tokens, so it was compacted."
                         else "The conversation was compacted."
                     update(note.id) {
                         it.copy(streaming = false,
@@ -318,8 +364,20 @@ class ChatRepository(
             val output = session.sumOf { it.completionTokens.toLong() }
             val cloud = session.filterNot { it.local }
             val cost = cloud.sumOf { it.promptTokens * INPUT_USD_PER_MTOK + it.completionTokens * OUTPUT_USD_PER_MTOK } / 1_000_000.0
-            val last = session.lastOrNull { it.promptTokens > 0 }?.promptTokens ?: 0
-            return SessionStats(last, input, output, cost)
+            val lastReply = session.lastOrNull { it.promptTokens > 0 || it.local }
+            val local = lastReply?.local == true
+            val last = if (local || lastReply == null) 0 else contextEstimate(lastReply)
+            return SessionStats(last, input, output, cost, localManaged = local)
+        }
+
+        /** A reply's tokens cover every model call of its turn; per call ≈ the conversation's size. */
+        fun contextEstimate(m: ChatMessage): Int = m.promptTokens / (m.tools.size + 1)
+
+        /** "start" / "done" / null for one of Hermes's status lines. */
+        fun pcCompactionStep(ev: StreamEvent.Status): String? = when {
+            ev.kind == "compacted" || ev.text.contains("compaction complete", ignoreCase = true) -> "done"
+            ev.text.contains("Compacting context", ignoreCase = true) -> "start"
+            else -> null
         }
     }
 }
