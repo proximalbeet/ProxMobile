@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "ProxAI"
-include(":app")
+include(":app", ":appshell")
