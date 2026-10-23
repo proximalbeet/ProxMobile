@@ -21,7 +21,9 @@ TMP = Path(tempfile.mkdtemp(prefix="apps-server-test-", dir=os.environ.get("TMPD
 APPS = TMP / "apps"
 ENV = TMP / ".env"
 KEY = "test-key-" + "x" * 30
-os.environ.update(PROXAI_APPS_DIR=str(APPS), PROXAI_ENV_FILE=str(ENV), PROXAI_APPS_PORT="0")
+THERMAL = TMP / "thermal"
+os.environ.update(PROXAI_APPS_DIR=str(APPS), PROXAI_ENV_FILE=str(ENV), PROXAI_APPS_PORT="0",
+                  PROXAI_THERMAL_DIR=str(THERMAL))
 
 spec = importlib.util.spec_from_file_location("apps_server", HERE / "proxai_apps_server.py")
 srv = importlib.util.module_from_spec(spec)
@@ -119,6 +121,37 @@ class AppsServer(unittest.TestCase):
         b[0]["apk"] = "../../.signing/password"
         (d / "builds.json").write_text(json.dumps(b))
         self.assertEqual(self.get("/v1/apps/evil-app/apk")[0], 404)
+
+    def test_pc_stats_and_alerts(self):
+        import time as _t
+        from datetime import datetime, timedelta
+        THERMAL.mkdir(exist_ok=True)
+        now = datetime.now()
+        rows = ["time,gpu_c,gpu_w,gpu_use,vram_mib,fan_pct,sm_mhz,throttle,cpu_pkg_c,cpu_core_max_c,cpu_use,ram_used_mb,ram_avail_mb,swap_mb"]
+        for i in range(120, 0, -1):   # two minutes of samples, one GPU spike
+            t = (now - timedelta(seconds=i)).strftime("%H:%M:%S")
+            gpu = 71 if i == 30 else 41
+            rows.append(f"{t},{gpu},{40 + i % 3},0,15700,0,1600,0x0,55,60,3.5,14000,{17000 - i},5000")
+        (THERMAL / f"{now:%Y-%m-%d}.csv").write_text("\n".join(rows) + "\n")
+        (THERMAL / "latest.json").write_text(json.dumps({"time": now.isoformat(), "gpu_c": 41, "limits": {"gpu_warn_c": 75}}))
+        (THERMAL / "alerts.jsonl").write_text("".join(
+            json.dumps({"id": i, "time": "t", "level": "ALERT", "kind": "gpu_t", "msg": f"GPU alert {i}"}) + "\n"
+            for i in range(1, 15)))
+        self.assertEqual(self.get("/v1/pc/stats", key=None)[0], 401)
+        code, body, _ = self.get("/v1/pc/stats")
+        st = json.loads(body)
+        self.assertEqual(code, 200)
+        self.assertTrue(st["watching"])
+        self.assertEqual(st["latest"]["gpu_c"], 41)
+        self.assertIn(len(st["history"]), (2, 3))
+        self.assertEqual(max(m["gpu_c"] for m in st["history"]), 71)       # the spike survives per-minute peaks
+        self.assertEqual([a["id"] for a in st["alerts"]], list(range(5, 15)))
+        code, body, _ = self.get("/v1/pc/alerts?after=12")
+        self.assertEqual([a["id"] for a in json.loads(body)["alerts"]], [13, 14])
+        self.assertEqual(self.get("/v1/pc/alerts?after=x")[0], 400)
+        old = _t.time() - 60
+        os.utime(THERMAL / "latest.json", (old, old))
+        self.assertFalse(json.loads(self.get("/v1/pc/stats")[1])["watching"])   # watcher stopped
 
     def test_real_builds_if_given(self):
         if not os.environ.get("APPS_FROM"):

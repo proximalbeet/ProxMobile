@@ -11,7 +11,11 @@ Runs with the system python3 (standard library only).
   GET /v1/apps                         every app: name, state, progress message, latest build
   GET /v1/apps/<id>                    one app + all its builds
   GET /v1/apps/<id>/apk                latest APK      (?code=N for an older build)
-  GET /v1/apps/<id>/icon               (not yet)
+  GET /v1/pc/stats                     the PC's current reading + last hour (per minute) + recent alerts
+  GET /v1/pc/alerts?after=N            alerts with id > N (ProxMobile's background check)
+
+The /v1/pc routes read the thermal watch's files (proxai_thermal_watch.py: latest.json,
+<date>.csv, alerts.jsonl in ~/.local/state/proxai/thermal-watch), also read-only.
 """
 from __future__ import annotations
 
@@ -30,6 +34,8 @@ APPS = Path(os.getenv("PROXAI_APPS_DIR", "~/dev/proxai/apps")).expanduser()
 ENV_FILE = Path(os.getenv("PROXAI_ENV_FILE", "~/.hermes/profiles/proxai/.env")).expanduser()
 HOST = os.getenv("PROXAI_APPS_HOST", "127.0.0.1")
 PORT = int(os.getenv("PROXAI_APPS_PORT", "8654"))
+THERMAL = Path(os.getenv("PROXAI_THERMAL_DIR", "~/.local/state/proxai/thermal-watch")).expanduser()
+STALE_SECS = 15
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
 APK_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}-[0-9][0-9A-Za-z.\-]{0,19}-[0-9]{1,6}\.apk$")
 
@@ -124,6 +130,74 @@ def find_apk(d: Path, code: int | None) -> Path | None:
     return apk
 
 
+# ---- PC stats (thermal watch) --------------------------------------------------------------------
+
+def _tail_lines(path: Path, max_bytes: int) -> list[str]:
+    try:
+        with path.open("rb") as f:
+            end = f.seek(0, 2)
+            f.seek(max(0, end - max_bytes))
+            data = f.read().decode("utf-8", "replace")
+    except OSError:
+        return []
+    lines = data.splitlines()
+    return lines[1:] if end > max_bytes else lines   # first line may be cut
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def pc_history(minutes: int = 60) -> list[dict]:
+    """Per-minute peaks for the last hour from today's CSV (lowest free RAM)."""
+    from datetime import datetime
+    path = THERMAL / f"{datetime.now():%Y-%m-%d}.csv"
+    rows = _tail_lines(path, minutes * 60 * 120)
+    by_min: dict[str, dict] = {}
+    for line in rows:
+        f = line.split(",")
+        if len(f) < 14 or not re.match(r"^\d\d:\d\d:\d\d$", f[0]):
+            continue
+        m = by_min.setdefault(f[0][:5], {"minute": f[0][:5]})
+        for key, idx in (("gpu_c", 1), ("gpu_w", 2), ("gpu_use", 3), ("cpu_use", 10)):
+            v = _num(f[idx])
+            if v is not None:
+                m[key] = max(m.get(key, v), v)
+        cpu = [x for x in (_num(f[8]), _num(f[9])) if x is not None]
+        if cpu:
+            m["cpu_c"] = max(m.get("cpu_c", max(cpu)), max(cpu))
+        ram = _num(f[12])
+        if ram is not None:
+            m["ram_free_mb"] = min(m.get("ram_free_mb", ram), ram)
+    return list(by_min.values())[-minutes:]
+
+
+def pc_alerts(after: int = 0, limit: int = 50) -> list[dict]:
+    out = []
+    for line in _tail_lines(THERMAL / "alerts.jsonl", 256 * 1024):
+        try:
+            a = json.loads(line)
+        except ValueError:
+            continue
+        if int(a.get("id", 0)) > after:
+            out.append(a)
+    return out[-limit:]
+
+
+def pc_stats() -> dict:
+    latest = read_json(THERMAL / "latest.json", None)
+    age = None
+    try:
+        age = round(time.time() - (THERMAL / "latest.json").stat().st_mtime)
+    except OSError:
+        pass
+    return {"latest": latest, "age_s": age, "watching": latest is not None and age is not None and age <= STALE_SECS,
+            "history": pc_history(), "alerts": pc_alerts()[-10:]}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProxAIApps/1"
 
@@ -156,6 +230,13 @@ class Handler(BaseHTTPRequestHandler):
             log(f"rejected {path} (bad key)")
             return self._json(401, {"error": "invalid API key"})
         parts = [p for p in path.split("/") if p]
+        if parts == ["v1", "pc", "stats"]:
+            return self._json(200, pc_stats())
+        if parts == ["v1", "pc", "alerts"]:
+            after = parse_qs(url.query).get("after", ["0"])[0]
+            if not after.isdigit():
+                return self._json(400, {"error": "after must be a number"})
+            return self._json(200, {"alerts": pc_alerts(int(after))})
         if parts[:2] != ["v1", "apps"]:
             return self._json(404, {"error": "not found"})
         if len(parts) == 2:

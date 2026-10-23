@@ -10,12 +10,13 @@ ExecStart=/usr/bin/python3 -I %h/dev/projects/ProxMobile/server/proxai_apps_serv
 Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=5
-# Sees only the apps folder (read-only, signing key hidden), the API key file and its own code.
+# Sees only the apps folder (read-only, signing key hidden), the thermal watch output (read-only),
+# the API key file and its own code.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=tmpfs
 PrivateTmp=yes
 # Socket activation hands over the listening socket, so the server needs no network of its own.
 PrivateNetwork=yes
-BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server
+BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch
 InaccessiblePaths=-%h/dev/proxai/apps/.signing
