@@ -61,11 +61,16 @@ class V3Test {
 
     @Test fun voicePromptWarnsAboutMishearing() {
         val now = ZonedDateTime.of(2026, 10, 22, 17, 5, 0, 0, zone)
-        val voice = Prompts.system(true, now)
-        assertTrue(voice.contains("misheard"))
-        assertTrue(voice.contains("Current phone time: Thursday 2026-10-22 17:05 (America/Detroit)"))
-        assertTrue(voice.contains("[[remind:"))
-        assertFalse(Prompts.system(false, now).contains("misheard"))
+        assertTrue(Prompts.system().contains("misheard"))
+        assertTrue(Prompts.system().contains("[[remind:"))
+        assertEquals("[Phone time: Thursday 2026-10-22 17:05 (America/Detroit); by voice]", Prompts.turnNote(true, now))
+        assertEquals("[Phone time: Thursday 2026-10-22 17:05 (America/Detroit)]", Prompts.turnNote(false, now))
+    }
+
+    @Test fun systemTextNeverChanges() {
+        // 10-23: the clock in the system text made the local model re-read the whole chat every message.
+        assertEquals(Prompts.system(), Prompts.system())
+        assertFalse(Prompts.system().contains("Phone time:"))
     }
 
     // ---- model routing ----

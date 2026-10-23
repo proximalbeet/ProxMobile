@@ -43,7 +43,8 @@ Example, if the phone time is 2026-10-22 17:00 and they say "remind me in 15 min
 tire pressure": reply "Got it, I'll remind you at 5:15." and add
     [[remind: 2026-10-22T17:15 | Check the tire pressure]]
 The reminder text is only the thing to do (no times). The time you say must match the tag.
-Use the current phone time below to work out relative times ("in 20 minutes", "tomorrow at 9").
+Use the phone time at the start of the user's message to work out relative times ("in 20 minutes",
+"tomorrow at 9").
 You may also set ONE reminder on your own when the user mentions something they must do at a future
 time ("I leave at 5", "the oven needs 40 minutes"); say so in the reply. Never set one for your own
 follow-ups or checks, for something already done, for a time that has passed, or again when it's
@@ -52,8 +53,8 @@ calendar event or a Discord reminder for it unless the user asks for that too.""
 
     private const val VOICE = """
 
-VOICE MODE — the user is talking to you by voice and your reply is read aloud, paragraph by
-paragraph, while you're still writing. So:
+VOICE MODE — when the user's message starts with a note saying "by voice", they're talking to you
+by voice and your reply is read aloud, paragraph by paragraph, while you're still writing. So:
 - First paragraph: the answer itself, 1-2 short sentences. Often that's the whole reply.
 - Only when more is really needed, up to 3 more short paragraphs (1-3 sentences each), separated
   by blank lines, most important first. Each paragraph is shown and spoken on its own.
@@ -67,11 +68,16 @@ ask a short question instead of guessing."""
 
     private val CLOCK = java.time.format.DateTimeFormatter.ofPattern("EEEE yyyy-MM-dd HH:mm", java.util.Locale.US)
 
-    /** System text for one request; [now] is the phone's local time (for reminders). */
-    fun system(voice: Boolean, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
-        val clock = "\n\nCurrent phone time: ${CLOCK.format(now)} (${now.zone.id})."
-        return BASE + REMINDERS + (if (voice) VOICE else "") + clock
-    }
+    /**
+     * The app's instructions. Identical on every request: Hermes puts them in the system prompt ahead
+     * of the whole conversation, so any change (the clock, voice on/off) made the local model re-read
+     * everything each message (10-23: 40-100 s before the first word). Per-message facts go in [turnNote].
+     */
+    fun system(): String = BASE + REMINDERS + VOICE
+
+    /** Put at the start of each message: the phone's time, and whether it was spoken. */
+    fun turnNote(voice: Boolean, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String =
+        "[Phone time: ${CLOCK.format(now)} (${now.zone.id})${if (voice) "; by voice" else ""}]"
 
     /** Asks Hermes to sum up a long session so a fresh one can continue it (auto-compact). */
     const val COMPACT = """Summarize our conversation so far so it can continue in a fresh session

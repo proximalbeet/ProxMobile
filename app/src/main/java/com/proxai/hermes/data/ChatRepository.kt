@@ -131,6 +131,7 @@ class ChatRepository(
                 append(carry.trim())
                 append("\n[End of summary]\n\n")
             }
+            append(Prompts.turnNote(fromVoice)).append('\n')
             append(prompt)
             if (target != null) {
                 append("\n\nModify this existing app (\"${target.title}\"). Return the COMPLETE updated file ")
@@ -139,7 +140,7 @@ class ChatRepository(
                 append("\n```")
             }
         }
-        val system = Prompts.system(fromVoice)
+        val system = Prompts.system()
 
         job = scope.launch {
             // Server mode -> the PC's local model (cached ~1 min, never waits more than ~5 s).
