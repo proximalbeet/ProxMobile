@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -120,6 +121,7 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
                     }
                 },
                 onChange = { onAskProxAI("Change my ${app.name} app (${app.id}): ") },
+                onStop = { onAskProxAI("Stop building my ${app.name} app (${app.id}).") },
                 onVersions = { versionsOf = app },
                 onRemove = { removing = app })
         }
@@ -166,7 +168,7 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
 
 @Composable
 private fun PcAppCard(app: PcApp, installed: Long?, working: Boolean, onMain: () -> Unit, onChange: () -> Unit,
-                      onVersions: () -> Unit, onRemove: () -> Unit) {
+                      onStop: () -> Unit, onVersions: () -> Unit, onRemove: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()) {
@@ -197,12 +199,15 @@ private fun PcAppCard(app: PcApp, installed: Long?, working: Boolean, onMain: ()
             }
             val action = PcApp.action(app, installed)
             if (working) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp))
+            else if (app.busy) OutlinedButton(onClick = onStop,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp)) { Text("Stop") }
             else if (action != "none") Button(onClick = onMain, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp)) {
                 Text(when (action) { "install" -> "Install"; "update" -> "Update"; else -> "Open" })
             }
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (app.busy) DropdownMenuItem(text = { Text("Stop the build") }, onClick = { menu = false; onStop() })
                     DropdownMenuItem(text = { Text("Change with ProxAI") }, onClick = { menu = false; onChange() })
                     DropdownMenuItem(text = { Text("Versions") }, onClick = { menu = false; onVersions() })
                     DropdownMenuItem(text = { Text("Remove…") }, onClick = { menu = false; onRemove() })

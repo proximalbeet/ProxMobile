@@ -25,6 +25,11 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.6.2", "2026-10-23", listOf(
+            "Apps built on your PC: ProxAI asks before it builds, changes or rolls back an app; only your yes " +
+                "starts it",
+            "A \"Stop\" button on an app that's building (also \"stop the build\" in chat)",
+        )),
         Release("0.6.1", "2026-10-23", listOf(
             "Much faster replies from the PC's local model: the app's instructions no longer change every " +
                 "minute (the clock moved into your message), so the PC reuses its cache instead of re-reading " +
