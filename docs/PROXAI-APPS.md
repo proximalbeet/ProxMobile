@@ -32,9 +32,9 @@ build itself needs no network at all.
 | **App shell** | ProxMobile `appshell/` | The Android code every generated app runs on: ProxAI title bar (blue gradient), the app full screen, and `window.ProxAI` for phone features. Compiled once into `classes.dex` (`./gradlew :appshell:shellKit`) | ✅ built, 5 tests |
 | **Builder** `proxai-app-build` | Hermes `sandbox/image/` (in the image at `/usr/local/bin`) | Checks an app folder, writes its manifest (only the permissions its features need), icon, packs the shell + the app's files, signs it, keeps every version, commits + tags the app's git repo | ✅ built, 6 tests in the real image |
 | **Sandbox image** `proxai-sandbox:2.1.302-apps` | Hermes `sandbox/build-image.sh` | The live container image + Java 17, Android build-tools 35, android-35, the shell kit and the builder (copied from `~/Android`, nothing downloaded) | ✅ built; **not live** (config still uses `2.1.302`) |
-| **Hermes app plugin** | Hermes `plugins/` | Tool that takes the request, picks the app folder, runs Claude Code with fixed instructions and limits, reports progress | ⏳ next |
-| **Apps server** | PC, tailnet only (`/apps`) | Lists apps + status, serves APKs to the phone, with the API key | ⏳ |
-| **Apps tab** | ProxMobile | Lists PC-built apps with progress, Install / Update, older versions | ⏳ |
+| **Hermes app plugin** `proxai_app` | Hermes `plugins/proxai-apps/` | create / update / rollback / status / list, phone + PC terminal only. Starts Claude Code in the background (one build at a time) with fixed instructions (`/opt/proxai-shell/GUIDE.md` in the image), returns at once | ✅ built, 12 tests + a real end-to-end build |
+| **Apps server** | ProxMobile `server/proxai_apps_server.py` | Read-only: lists apps + progress, serves APKs, API key required; socket-activated, sandboxed (signing key hidden, no network), tailnet `/apps` | ✅ built, 9 tests + sandbox check; **not installed** |
+| **Apps tab** (ProxMobile 0.4.0) | ProxMobile `ui/PcAppsSection.kt`, `data/PcApps.kt`, `data/AppInstaller.kt` | "Built on your PC": progress while building, Install / Update / Open, Versions + Roll back, Change with ProxAI; checks SHA-256 and pins the signing key | ✅ built, 33 app tests; APK `~/Downloads/ProxAI-0.4.0.apk` |
 | **`ProxAI.ask` for installed apps** | ProxMobile | Lets a generated app ask ProxAI through ProxMobile (which holds the key), only for apps signed with the generated-apps key | ⏳ |
 
 ## Tech stack
@@ -107,6 +107,19 @@ python3 sandbox/test_app_build.py
 On the phone: `ProxAI-Test-App-shell-test.apk` (Taildrop 10-22) has a button per feature.
 It's signed with a throwaway test key, so uninstall it before installing real ProxAI apps.
 
+## Go live (at the PC)
+
+```bash
+git -C ~/.hermes/profiles/proxai merge --no-edit worktree-proxai-apps      # includes the vault-write branch
+git -C ~/dev/projects/ProxMobile merge --no-edit worktree-proxai-apps      # includes 0.3.x
+docker rm -f $(docker ps -q --filter name=hermes-)                         # next tool call starts the new image
+systemctl --user restart hermes-gateway-proxai proxai-phone-voice
+~/dev/projects/ProxMobile/scripts/install-apps-service.sh                  # apps server + tailnet /apps
+```
+Then install `ProxAI-0.4.0.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
+The image `proxai-sandbox:2.1.302-apps` is already built on the PC; to rebuild it later:
+`./gradlew :appshell:shellKit` (ProxMobile), then `sandbox/build-image.sh` (Hermes).
+
 ## Changelog
 
 - **2026-10-22** — Decisions with Nathan: Claude Code builds and tests each app, real APKs listed
@@ -116,3 +129,8 @@ It's signed with a throwaway test key, so uninstall it before installing real Pr
   icon, signing, versions, git tags, rollback, progress, refusals) · sandbox image
   `proxai-sandbox:2.1.302-apps` with Java 17 + Android build-tools (not live) · sample app
   `apps-example/proxai-test` · 6 builder tests pass in the real image · test APK sent to the phone.
+- **2026-10-22 (later)** — Hermes `proxai_app` tool (background builds through the Claude Code
+  runner, one at a time, phone/CLI only) · Claude Code guide + example baked into the image ·
+  **first real end-to-end build**: "Water Log" from a one-line request, in a container set up like
+  the live one (5 turns, ~30 s, Node-tested, signed APK) · apps server (read-only, sandboxed) ·
+  ProxMobile 0.4.0 Apps tab (progress, Install/Update/Open, versions, rollback, key pinning).
