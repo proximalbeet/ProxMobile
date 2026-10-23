@@ -82,6 +82,7 @@ calls for anything else do nothing.
 | `notifications` | `ProxAI.notify(title, text)`, `ProxAI.remind(date, text)` | POST_NOTIFICATIONS (asked on first use) |
 | `speech` | `ProxAI.speak(text)` | none |
 | `ask` | `await ProxAI.ask(prompt)` | none (goes through ProxMobile; **not connected yet**) |
+| `pc-stats` (0.5.0) | `await ProxAI.pcStats()` → the PC's live GPU/CPU/RAM reading, last hour per minute, recent alerts | none (read through ProxMobile's `PcStatsProvider`, which answers only `com.proxai.apps.*` apps signed with the pinned key; the API key never leaves ProxMobile) |
 
 Not available until you approve them case by case: internet, camera, microphone, location,
 contacts, SMS, storage. The builder refuses them for now.
@@ -115,8 +116,9 @@ git -C ~/dev/projects/ProxMobile merge --no-edit worktree-proxai-apps      # inc
 docker rm -f $(docker ps -q --filter name=hermes-)                         # next tool call starts the new image
 systemctl --user restart hermes-gateway-proxai proxai-phone-voice
 ~/dev/projects/ProxMobile/scripts/install-apps-service.sh                  # apps server + tailnet /apps
+~/dev/projects/ProxMobile/scripts/install-thermal-watch.sh                 # 24/7 PC watch (alerts + pc-stats)
 ```
-Then install `ProxAI-0.4.1.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
+Then install `ProxAI-0.5.0.apk`, ask "make me a water tracker" in the app, watch the Apps tab.
 The image `proxai-sandbox:2.1.302-apps` is already built on the PC; to rebuild it later:
 `./gradlew :appshell:shellKit` (ProxMobile), then `sandbox/build-image.sh` (Hermes).
 
@@ -134,3 +136,10 @@ The image `proxai-sandbox:2.1.302-apps` is already built on the PC; to rebuild i
   **first real end-to-end build**: "Water Log" from a one-line request, in a container set up like
   the live one (5 turns, ~30 s, Node-tested, signed APK) · apps server (read-only, sandboxed) ·
   ProxMobile 0.4.0 Apps tab (progress, Install/Update/Open, versions, rollback, key pinning).
+- **2026-10-22 (night)** — **PC tracking** (Nathan: "a system tracking app, with background
+  alerts"): the 10-22 temporary thermal watch became a 24/7 service (`server/proxai_thermal_watch.py`,
+  daily CSVs, `latest.json`, numbered `alerts.jsonl`, Ollama unload through its API); the apps
+  server gained `/v1/pc/stats` and `/v1/pc/alerts`; ProxMobile **0.5.0** checks for PC alerts about
+  every 15 min (Android's minimum while closed; nothing is lost, alerts are numbered) and right away
+  when opened, and passes stats to apps with the new **`pc-stats`** feature; shell kit v2; the
+  Claude Code guide documents it, so "make me a PC monitor app" works without extra setup.

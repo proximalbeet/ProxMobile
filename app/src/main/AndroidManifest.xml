@@ -145,5 +145,10 @@
             </intent-filter>
         </service>
         <receiver android:name=".data.InstallResultReceiver" android:exported="false" />
+        <!-- v0.5: PC stats for ProxAI-built apps ("pc-stats" feature); checks the caller's signature -->
+        <provider
+            android:name=".data.PcStatsProvider"
+            android:authorities="com.proxai.hermes.pcstats"
+            android:exported="true" />
     </application>
 </manifest>

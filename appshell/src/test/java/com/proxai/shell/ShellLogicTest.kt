@@ -11,6 +11,7 @@ class ShellLogicTest {
             "features":["vibrate","internet","camera","notifications"],"color":"#22aa88"}""")
         assertEquals("tip-calc", i.id)
         assertEquals(setOf("vibrate", "notifications"), i.features)
+        assertEquals(setOf("pc-stats"), ShellLogic.parseInfo("""{"features":["pc-stats","gpu"]}""").features)
         assertEquals(0xFF22AA88.toInt(), i.color)
     }
 
@@ -41,5 +42,6 @@ class ShellLogicTest {
         val out = ShellLogic.injectShim("<html><head><title>x</title></head><body><script>ProxAI.toast('hi')</script></body></html>")
         assertTrue(out.indexOf("window.ProxAI") < out.indexOf("<title>"))
         assertTrue(ShellLogic.injectShim("<p>no head</p>").startsWith("<script>"))
+        assertTrue(ShellLogic.SHIM.contains("pcStats: function()"))
     }
 }

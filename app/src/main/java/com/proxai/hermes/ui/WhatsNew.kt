@@ -25,6 +25,13 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.5.0", "2026-10-22", listOf(
+            "PC temperature alerts: the PC watches GPU/CPU/RAM every second (and unloads the local " +
+                "model if the GPU gets critical); the phone shows its alerts (checked about every 15 min " +
+                "while ProxAI is closed, right away when you open it). Settings → Notifications",
+            "Apps ProxAI builds can show your PC's live stats (new \"pc-stats\" feature), e.g. \"make me " +
+                "a PC monitor app\". Only apps signed with your ProxAI apps key can read them",
+        )),
         Release("0.4.1", "2026-10-22", listOf(
             "Auto-compact measures correctly; the limits didn't change (cloud 60k, PC model 85% ≈ 56k)",
             "Server mode: the PC compacts by itself, and the app now shows its \"Compacting the " +

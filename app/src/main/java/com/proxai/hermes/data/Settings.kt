@@ -94,6 +94,16 @@ class Settings(context: Context) : HermesConfig {
         get() = prefs.getBoolean("reply_notifications", true)
         set(v) = prefs.edit().putBoolean("reply_notifications", v).apply()
 
+    /** Notify about the PC's temperature / load alerts (checked about every 15 min). */
+    var pcAlerts: Boolean
+        get() = prefs.getBoolean("pc_alerts", true)
+        set(v) = prefs.edit().putBoolean("pc_alerts", v).apply()
+
+    /** Newest PC alert already shown (alerts are numbered on the PC). */
+    var lastPcAlertId: Int
+        get() = prefs.getInt("last_pc_alert_id", 0)
+        set(v) = prefs.edit().putInt("last_pc_alert_id", v).apply()
+
     /** Auto-compact once one reply's input passes this many tokens. 0 = off. */
     var compactAtTokens: Int
         get() = prefs.getInt("compact_at_tokens", 60_000)

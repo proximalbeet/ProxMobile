@@ -213,6 +213,29 @@ class ShellActivity : Activity() {
             return true
         }
 
+        /** The PC's stats through ProxMobile (it holds the key; this app never sees it). Resolves
+         *  with the stats JSON text; the shim parses it. */
+        @JavascriptInterface
+        fun pcStats(callId: String) {
+            fun reply(payload: JSONObject) =
+                runOnUiThread { web.evaluateJavascript("window.__proxaiResolve(${JSONObject.quote(callId)}, $payload)", null) }
+            if (!has("pc-stats")) {
+                reply(JSONObject().put("ok", false).put("error", "This app wasn't built with the 'pc-stats' feature."))
+                return
+            }
+            Thread {
+                val payload = try {
+                    val b = contentResolver.call(android.net.Uri.parse(ShellLogic.PC_STATS_URI), "stats", null, null)
+                    val json = b?.getString("json")
+                    if (json != null) JSONObject().put("ok", true).put("text", json)
+                    else JSONObject().put("ok", false).put("error", b?.getString("error") ?: "ProxMobile isn't installed or is too old")
+                } catch (e: Exception) {
+                    JSONObject().put("ok", false).put("error", "ProxMobile isn't installed or is too old")
+                }
+                reply(payload)
+            }.start()
+        }
+
         /** Asking ProxAI from a generated app goes through ProxMobile (it holds the key). Coming
          *  in a later step; until then the promise rejects with a clear message. */
         @JavascriptInterface

@@ -39,7 +39,7 @@ dependencies {
     testImplementation("org.json:json:20240303")
 }
 
-val shellKitVersion = "1"
+val shellKitVersion = "2"   // 2: pc-stats
 
 tasks.register<Copy>("shellKit") {
     description = "Extracts the shell's classes.dex into build/shell-kit for the Hermes sandbox image."

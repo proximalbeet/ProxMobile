@@ -20,6 +20,8 @@ import com.proxai.hermes.ui.MainActivity
 object Notifier {
     const val CH_REMINDERS = "reminders"
     const val CH_REPLIES = "replies"
+    const val CH_PC = "pc-alerts"
+    const val CH_PC_CRIT = "pc-alerts-critical"
     private const val REPLY_ID = 1
 
     fun createChannels(context: Context) {
@@ -28,6 +30,25 @@ object Notifier {
             .apply { description = "Reminders you asked ProxAI for" })
         nm.createNotificationChannel(NotificationChannel(CH_REPLIES, "Replies", NotificationManager.IMPORTANCE_DEFAULT)
             .apply { description = "ProxAI finished answering while the app was closed" })
+        nm.createNotificationChannel(NotificationChannel(CH_PC, "PC alerts", NotificationManager.IMPORTANCE_DEFAULT)
+            .apply { description = "The PC ran hot or short on memory (warnings)" })
+        nm.createNotificationChannel(NotificationChannel(CH_PC_CRIT, "PC critical alerts", NotificationManager.IMPORTANCE_HIGH)
+            .apply { description = "The PC hit a critical temperature; it protects itself (unloads the local model)" })
+    }
+
+    fun pcAlert(context: Context, a: com.proxai.hermes.data.PcAlert) {
+        if (!canPost(context)) return
+        val title = if (a.critical) "🔥 PC critical" else "⚠️ PC alert"
+        val time = a.time.substringAfter('T').take(5)
+        val n = NotificationCompat.Builder(context, if (a.critical) CH_PC_CRIT else CH_PC)
+            .setSmallIcon(R.drawable.ic_tile)
+            .setContentTitle(title)
+            .setContentText("$time · ${a.msg}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$time · ${a.msg}"))
+            .setContentIntent(openChat(context, 3))
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(context).notify(200_000 + a.id, n)
     }
 
     fun canPost(context: Context): Boolean =

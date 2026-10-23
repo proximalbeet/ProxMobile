@@ -170,6 +170,17 @@ fun NotificationsSection() {
         Text("Notify me when ProxAI replies while the app is closed", Modifier.weight(1f))
         Switch(replies, { replies = it; s.replyNotifications = it })
     }
+    var pcAlerts by remember { mutableStateOf(s.pcAlerts) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("PC temperature alerts (GPU, CPU, memory)", Modifier.weight(1f))
+        Switch(pcAlerts, {
+            pcAlerts = it; s.pcAlerts = it
+            com.proxai.hermes.data.PcAlertWorker.schedule(ctx)
+        })
+    }
+    Hint("The PC watches itself every second and unloads the local model if the GPU gets critical. " +
+        "The phone checks for its alerts about every 15 minutes (Android's limit while ProxAI is closed) " +
+        "and right away when you open ProxAI.")
     Hint("Reminders: say \"remind me at 5 to call Mom\" or \"in 20 minutes, check the oven\". ProxAI sets them " +
         "on the phone, and they work offline once set.")
     if (reminders.isEmpty()) Text("No reminders set.", style = MaterialTheme.typography.bodyMedium)

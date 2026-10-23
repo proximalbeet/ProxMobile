@@ -10,7 +10,10 @@ object ShellLogic {
     const val ORIGIN = "https://$HOST/"
 
     /** Features an app can ask for in proxai-app.json. Anything else is ignored. */
-    val KNOWN_FEATURES = setOf("vibrate", "notifications", "speech", "ask")
+    val KNOWN_FEATURES = setOf("vibrate", "notifications", "speech", "ask", "pc-stats")
+
+    /** ProxMobile's door for PC stats (data/PcStats.kt PcStatsProvider). */
+    const val PC_STATS_URI = "content://com.proxai.hermes.pcstats"
 
     data class AppInfo(
         val id: String,
@@ -102,6 +105,9 @@ object ShellLogic {
     notify: function(title, text){ return n.notify(String(title || ''), String(text || '')); },
     remind: function(when, text){ var t = (when instanceof Date) ? when.getTime() : Number(new Date(when));
       return n.remind(t, String(text || '')); },
+    pcStats: function(){ return new Promise(function(resolve, reject){
+      var id = 'c' + (++seq); pending[id] = {resolve: function(t){ try { resolve(JSON.parse(t)); } catch(e) { reject(e); } },
+        reject: reject}; n.pcStats(id); }); },
     app: (function(){ try { return JSON.parse(n.appInfo()); } catch(e) { return {}; } })()
   };
 })();</script>"""

@@ -44,9 +44,11 @@ class ProxApp : Application() {
         Notifier.createChannels(this)
         // Alarms are dropped when the app is updated; set them again.
         reminders.rescheduleAll()
+        com.proxai.hermes.data.PcAlertWorker.schedule(this)
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(a: Activity) {
+                if (started == 0) com.proxai.hermes.data.PcAlertWorker.checkNow(a)
                 started++
                 Notifier.clearReply(a)
             }
