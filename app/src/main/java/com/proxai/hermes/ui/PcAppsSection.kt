@@ -100,8 +100,9 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
     }
 
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Explicit colour: this list isn't inside a Surface, so text would default to black.
         Text("Built on your PC", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+            color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
         if (apps.isEmpty()) {
             Text(error ?: "Ask ProxAI for an app: it builds a real app on your PC with Claude Code, and it shows up here to install.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -126,7 +127,7 @@ fun PcAppsSection(onAskProxAI: (String) -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Text("On this phone", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp))
+            color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp))
     }
 
     versionsOf?.let { app -> VersionsDialog(app, onDismiss = { versionsOf = null }, onRollback = { b ->

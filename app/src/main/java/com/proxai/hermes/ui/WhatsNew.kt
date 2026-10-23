@@ -25,6 +25,9 @@ object Changelog {
     data class Release(val version: String, val date: String, val items: List<String>)
 
     val releases = listOf(
+        Release("0.5.1", "2026-10-22", listOf(
+            "Apps tab: the \"Built on your PC\" and \"On this phone\" headings were dark on dark; now readable",
+        )),
         Release("0.5.0", "2026-10-22", listOf(
             "PC temperature alerts: the PC watches GPU/CPU/RAM every second (and unloads the local " +
                 "model if the GPU gets critical); the phone shows its alerts (checked about every 15 min " +
