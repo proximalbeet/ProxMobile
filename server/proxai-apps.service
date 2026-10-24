@@ -18,5 +18,7 @@ ProtectHome=tmpfs
 PrivateTmp=yes
 # Socket activation hands over the listening socket, so the server needs no network of its own.
 PrivateNetwork=yes
-BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch -%h/.local/state/proxai/context -%h/.local/state/proxai/notices
+BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch -%h/.local/state/proxai/context -%h/.local/state/proxai/notices -%h/.local/state/proxai/scout
+# The one writable folder: the scout gig board's change requests (proxai-scout applies them).
+BindPaths=-%h/.local/state/proxai/scout/inbox
 InaccessiblePaths=-%h/dev/proxai/apps/.signing

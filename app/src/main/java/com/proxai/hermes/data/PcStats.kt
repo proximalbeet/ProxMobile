@@ -17,8 +17,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.proxai.hermes.ProxApp
 import com.proxai.hermes.notify.Notifier
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
 import java.security.MessageDigest
@@ -83,6 +85,26 @@ class PcStatsClient(private val config: HermesConfig) {
     fun alertsAfter(id: Int): List<PcAlert> = PcAlert.parseList(get("/v1/pc/alerts?after=$id"))
 
     fun noticesAfter(id: Int): List<PcNotice> = PcNotice.parseList(get("/v1/pc/notices?after=$id"))
+
+    /** The scout's gig board (Hermes proxai-scout): {"items": [...], "statuses": {"gigs": [...], "ideas": [...]}}. */
+    fun scout(): String = get("/v1/scout")
+
+    /** Queue a gig-board change on the PC ({"id", "status"?, "notes"?, "hours"?, "block"?}); the PC applies it
+     *  within a minute. Returns the server's JSON; throws with its error message when refused. */
+    fun scoutUpdate(json: String): String {
+        if (!config.isConfigured) throw IOException("ProxAI isn't connected to the PC")
+        if (json.length > 8192) throw IOException("That change is too big")
+        val req = Request.Builder().url(config.baseUrl + "/apps/v1/scout/update")
+            .header("Authorization", "Bearer ${config.apiKey}")
+            .post(json.toRequestBody("application/json".toMediaType())).build()
+        http.newCall(req).execute().use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw IOException(
+                runCatching { JSONObject(body).optString("error") }.getOrNull()?.takeIf { it.isNotBlank() }
+                    ?: "The PC refused the change (HTTP ${r.code})")
+            return body
+        }
+    }
 
     /** The conversation's real size on the PC (latest model call), or null if unknown. */
     fun context(session: String): PcContext? = PcContext.parse(get("/v1/pc/context?session=" +
@@ -193,9 +215,15 @@ class PcStatsProvider : ContentProvider() {
         val trusted = ctx.getSharedPreferences("pc_apps", Context.MODE_PRIVATE).getString("trusted_cert_sha256", null)
         val why = refuse(caller, caller?.let { certOf(ctx, it) }, trusted)
         if (why != null) return Bundle().apply { putString("error", why) }
-        if (method != "stats") return Bundle().apply { putString("error", "unknown method") }
+        val client = PcStatsClient(ProxApp.instance.settings)
         return try {
-            Bundle().apply { putString("json", PcStatsClient(ProxApp.instance.settings).stats()) }
+            val json = when (method) {
+                "stats" -> client.stats()
+                "scout" -> client.scout()                          // the scout's gig board (v0.6.4)
+                "scout-update" -> client.scoutUpdate(arg ?: "")
+                else -> return Bundle().apply { putString("error", "unknown method") }
+            }
+            Bundle().apply { putString("json", json) }
         } catch (e: Exception) {
             Bundle().apply { putString("error", e.message ?: "Can't reach the PC") }
         }

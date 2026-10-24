@@ -24,6 +24,8 @@ KEY = "test-key-" + "x" * 30
 THERMAL = TMP / "thermal"
 CONTEXT = TMP / "context"
 NOTICES = TMP / "notices"
+SCOUT = TMP / "scout"
+os.environ["PROXAI_SCOUT_DIR"] = str(SCOUT)
 os.environ.update(PROXAI_APPS_DIR=str(APPS), PROXAI_ENV_FILE=str(ENV), PROXAI_APPS_PORT="0",
                   PROXAI_THERMAL_DIR=str(THERMAL), PROXAI_CONTEXT_DIR=str(CONTEXT), PROXAI_NOTICES_DIR=str(NOTICES))
 
@@ -76,6 +78,49 @@ class AppsServer(unittest.TestCase):
                 return r.status, r.read(), r.headers
         except urllib.error.HTTPError as e:
             return e.code, e.read(), e.headers
+
+    def post(self, path, body, key=KEY, raw=None):
+        data = raw if raw is not None else json.dumps(body).encode()
+        req = urllib.request.Request(self.base + path, data=data, method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              **({"Authorization": f"Bearer {key}"} if key else {})})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    def test_scout_board_and_updates(self):
+        (SCOUT / "inbox").mkdir(parents=True, exist_ok=True)
+        (SCOUT / "tracker.json").write_text(json.dumps({"items": {
+            "aaaaaaaaaaaa": {"id": "aaaaaaaaaaaa", "lane": "gigs", "title": "Old gig", "status": "won", "found": "2026-10-20T05:00:00"},
+            "bbbbbbbbbbbb": {"id": "bbbbbbbbbbbb", "lane": "ideas", "name": "Quote Builder", "status": "new", "found": "2026-10-24T05:00:00"}}}))
+        code, body, _ = self.get("/v1/scout")
+        board = json.loads(body)
+        self.assertEqual(code, 200)
+        self.assertEqual([i["id"] for i in board["items"]], ["bbbbbbbbbbbb", "aaaaaaaaaaaa"])   # newest first
+        self.assertIn("pitched", board["statuses"]["gigs"])
+        self.assertEqual(self.get("/v1/scout", key="wrong")[0], 401)
+
+        code, r = self.post("/v1/scout/update", {"id": "aaaaaaaaaaaa", "status": "done", "hours": 5,
+                                                  "block": {"start": "2026-10-26T14:00", "hours": 2}})
+        self.assertEqual((code, r["queued"]), (202, True))
+        queued = list((SCOUT / "inbox").glob("*.json"))
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(json.loads(queued[0].read_text())["status"], "done")
+        self.assertEqual(json.loads((SCOUT / "tracker.json").read_text())["items"]["aaaaaaaaaaaa"]["status"], "won")
+
+        for bad in ({"id": "../x", "status": "won"}, {"id": "aaaaaaaaaaaa", "status": "hacked"},
+                    {"id": "aaaaaaaaaaaa", "notes": "x" * 2001}, {"id": "aaaaaaaaaaaa", "hours": True},
+                    {"id": "aaaaaaaaaaaa", "block": {"start": "tomorrow", "hours": 2}},
+                    {"id": "aaaaaaaaaaaa", "block": {"start": "2026-10-26T14:00", "hours": 13}},
+                    {"id": "aaaaaaaaaaaa", "status": "won", "x": 1}, {"id": "aaaaaaaaaaaa"}, ["list"]):
+            self.assertEqual(self.post("/v1/scout/update", bad)[0], 400, bad)
+        self.assertEqual(self.post("/v1/scout/update", None, raw=b"x" * 9000)[0], 400)
+        self.assertEqual(self.post("/v1/scout/update", None, raw=b"{nope")[0], 400)
+        self.assertEqual(self.post("/v1/scout/update", {"id": "aaaaaaaaaaaa", "status": "done"}, key="wrong")[0], 401)
+        self.assertEqual(self.post("/v1/apps", {"id": "aaaaaaaaaaaa", "status": "done"})[0], 404)
+        self.assertEqual(len(list((SCOUT / "inbox").glob("*.json"))), 1)       # nothing else got in
 
     def test_health_needs_no_key(self):
         self.assertEqual(self.get("/health", key=None)[0], 200)

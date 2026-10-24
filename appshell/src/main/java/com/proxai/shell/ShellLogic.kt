@@ -10,7 +10,7 @@ object ShellLogic {
     const val ORIGIN = "https://$HOST/"
 
     /** Features an app can ask for in proxai-app.json. Anything else is ignored. */
-    val KNOWN_FEATURES = setOf("vibrate", "notifications", "speech", "ask", "pc-stats")
+    val KNOWN_FEATURES = setOf("vibrate", "notifications", "speech", "ask", "pc-stats", "scout")
 
     /** ProxMobile's door for PC stats (data/PcStats.kt PcStatsProvider). */
     const val PC_STATS_URI = "content://com.proxai.hermes.pcstats"
@@ -108,6 +108,12 @@ object ShellLogic {
     pcStats: function(){ return new Promise(function(resolve, reject){
       var id = 'c' + (++seq); pending[id] = {resolve: function(t){ try { resolve(JSON.parse(t)); } catch(e) { reject(e); } },
         reject: reject}; n.pcStats(id); }); },
+    scout: function(){ return new Promise(function(resolve, reject){
+      var id = 'c' + (++seq); pending[id] = {resolve: function(t){ try { resolve(JSON.parse(t)); } catch(e) { reject(e); } },
+        reject: reject}; n.scout(id); }); },
+    scoutUpdate: function(change){ return new Promise(function(resolve, reject){
+      var id = 'c' + (++seq); pending[id] = {resolve: function(t){ try { resolve(JSON.parse(t)); } catch(e) { reject(e); } },
+        reject: reject}; n.scoutUpdate(id, JSON.stringify(change || {})); }); },
     app: (function(){ try { return JSON.parse(n.appInfo()); } catch(e) { return {}; } })()
   };
 })();</script>"""

@@ -15,6 +15,12 @@ class ShellLogicTest {
         assertEquals(0xFF22AA88.toInt(), i.color)
     }
 
+    @Test fun scoutFeatureAndApi() {
+        assertEquals(setOf("scout"), ShellLogic.parseInfo("""{"features":["scout"]}""").features)
+        assertTrue(ShellLogic.SHIM.contains("scout: function"))
+        assertTrue(ShellLogic.SHIM.contains("n.scoutUpdate(id, JSON.stringify(change || {}))"))
+    }
+
     @Test fun infoDefaults() {
         val i = ShellLogic.parseInfo("{}")
         assertEquals("ProxAI app", i.name)

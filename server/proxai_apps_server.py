@@ -17,8 +17,14 @@ Runs with the system python3 (standard library only).
                                        waiting... (Hermes plugin proxai-schedule, ~/.local/state/proxai/notices)
   GET /v1/pc/context?session=ID        the conversation's real size: the latest model call's prompt tokens
                                        (Hermes plugin proxai-context, ~/.local/state/proxai/context)
+  GET /v1/scout                        the scout's gig board: every picked gig / app idea with its status,
+                                       notes, hours, calendar block (Hermes plugin proxai-scout, tracker.json)
+  POST /v1/scout/update                {"id", "status"?, "notes"?, "hours"?, "block"?: {"start", "hours"}}:
+                                       checked, then queued in scout/inbox/; the scout plugin applies it
+                                       (the only writer of the board and of the calendar block)
 
-The /v1/pc routes read the thermal watch's files (proxai_thermal_watch.py: latest.json,
+Everything is read-only except scout/inbox/, where /v1/scout/update drops one small JSON file per
+request. The /v1/pc routes read the thermal watch's files (proxai_thermal_watch.py: latest.json,
 <date>.csv, alerts.jsonl in ~/.local/state/proxai/thermal-watch), also read-only.
 """
 from __future__ import annotations
@@ -41,6 +47,12 @@ PORT = int(os.getenv("PROXAI_APPS_PORT", "8654"))
 THERMAL = Path(os.getenv("PROXAI_THERMAL_DIR", "~/.local/state/proxai/thermal-watch")).expanduser()
 CONTEXT = Path(os.getenv("PROXAI_CONTEXT_DIR", "~/.local/state/proxai/context")).expanduser()
 NOTICES = Path(os.getenv("PROXAI_NOTICES_DIR", "~/.local/state/proxai/notices")).expanduser()
+SCOUT = Path(os.getenv("PROXAI_SCOUT_DIR", "~/.local/state/proxai/scout")).expanduser()
+GIG_STATUSES = ("new", "interested", "pitched", "won", "done", "passed")      # same as proxai-scout tracker.py
+IDEA_STATUSES = ("new", "interested", "building", "built", "passed")
+SCOUT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+MAX_BODY = 8192
+MAX_INBOX = 200
 STALE_SECS = 15
 SESSION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
@@ -236,6 +248,60 @@ def pc_context(session: str) -> dict:
     return aged(latest, "latest") if isinstance(latest, dict) else {"match": None}
 
 
+def scout_board() -> dict:
+    try:
+        items = json.loads((SCOUT / "tracker.json").read_text(encoding="utf-8")).get("items", {})
+    except (OSError, ValueError):
+        items = {}
+    rows = sorted((v for v in items.values() if isinstance(v, dict)), key=lambda v: str(v.get("found", "")), reverse=True)
+    return {"items": rows, "statuses": {"gigs": list(GIG_STATUSES), "ideas": list(IDEA_STATUSES)}}
+
+
+def scout_request(req) -> tuple[dict | None, str | None]:
+    """The same checks as proxai-scout's tracker.check_request (it checks again before applying)."""
+    if not isinstance(req, dict):
+        return None, "body must be a JSON object"
+    extra = set(req) - {"id", "status", "notes", "hours", "block"}
+    if extra:
+        return None, f"unknown fields: {sorted(extra)}"
+    if not isinstance(req.get("id"), str) or not SCOUT_ID_RE.match(req["id"]):
+        return None, "id must be 12 hex characters"
+    if "status" in req and req["status"] not in set(GIG_STATUSES) | set(IDEA_STATUSES):
+        return None, "unknown status"
+    if "notes" in req and (not isinstance(req["notes"], str) or len(req["notes"]) > 2000):
+        return None, "notes must be text, at most 2000 characters"
+    h = req.get("hours")
+    if "hours" in req and h is not None and (isinstance(h, bool) or not isinstance(h, (int, float)) or not 0 <= h <= 500):
+        return None, "hours must be a number from 0 to 500, or null"
+    if "block" in req:
+        b = req["block"]
+        if not isinstance(b, dict) or set(b) - {"start", "hours"}:
+            return None, "block must be {start, hours}"
+        if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$", str(b.get("start", ""))):
+            return None, "block.start must look like 2026-10-25T14:00 (local time)"
+        bh = b.get("hours")
+        if isinstance(bh, bool) or not isinstance(bh, (int, float)) or not 0.25 <= bh <= 12:
+            return None, "block.hours must be from 0.25 to 12"
+    if len(req) == 1:
+        return None, "nothing to change"
+    return req, None
+
+
+def queue_scout(req: dict) -> str | None:
+    """One file per request in scout/inbox/; None when queued, else why not."""
+    box = SCOUT / "inbox"
+    try:
+        if sum(1 for _ in box.iterdir()) >= MAX_INBOX:
+            return "too many changes waiting; try again in a minute"
+        name = f"{time.time_ns()}-{os.urandom(3).hex()}"
+        tmp = box / f".{name}.tmp"
+        tmp.write_text(json.dumps(req), encoding="utf-8")
+        os.replace(tmp, box / f"{name}.json")
+        return None
+    except OSError as exc:
+        return f"can't queue the change ({exc.strerror or exc})"
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProxAIApps/1"
 
@@ -291,6 +357,8 @@ class Handler(BaseHTTPRequestHandler):
             if not SESSION_RE.match(session):
                 return self._json(400, {"error": "session must be a session id"})
             return self._json(200, pc_context(session))
+        if parts == ["v1", "scout"]:
+            return self._json(200, scout_board())
         if parts[:2] != ["v1", "apps"]:
             return self._json(404, {"error": "not found"})
         if len(parts) == 2:
@@ -324,6 +392,37 @@ class Handler(BaseHTTPRequestHandler):
             log(f"sent {apk.name} ({size} bytes)")
             return
         return self._json(404, {"error": "not found"})
+
+
+def _do_post(self):
+    path = urlsplit(self.path).path.rstrip("/")
+    if path.startswith("/apps/"):
+        path = path[5:]
+    if not self._authorized():
+        log(f"rejected POST {path} (bad key)")
+        return self._json(401, {"error": "invalid API key"})
+    if path != "/v1/scout/update":
+        return self._json(404, {"error": "not found"})
+    try:
+        size = int(self.headers.get("Content-Length") or 0)
+    except ValueError:
+        size = -1
+    if not 0 < size <= MAX_BODY:
+        return self._json(400, {"error": f"body must be 1 to {MAX_BODY} bytes of JSON"})
+    try:
+        body = json.loads(self.rfile.read(size).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return self._json(400, {"error": "body must be JSON"})
+    req, err = scout_request(body)
+    if err:
+        return self._json(400, {"error": err})
+    err = queue_scout(req)
+    if err:
+        return self._json(503, {"error": err})
+    return self._json(202, {"ok": True, "queued": True, "note": "applied on the PC within a minute"})
+
+
+Handler.do_POST = _do_post
 
 
 def make_server() -> tuple[ThreadingHTTPServer, str]:

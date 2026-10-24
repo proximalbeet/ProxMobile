@@ -27,7 +27,7 @@ if [[ "$REPO" != "$HOME/dev/projects/ProxMobile" ]]; then
   exit 1
 fi
 
-mkdir -p "$HOME/dev/proxai/apps" "$HOME/.local/state/proxai/context" "$HOME/.local/state/proxai/notices" "$DIR"   # context: written by Hermes (proxai-context)
+mkdir -p "$HOME/dev/proxai/apps" "$HOME/.local/state/proxai/context" "$HOME/.local/state/proxai/notices" "$HOME/.local/state/proxai/scout/inbox" "$DIR"   # context: written by Hermes (proxai-context)
 install -m 0644 "$REPO/server/$SERVICE" "$DIR/$SERVICE"
 install -m 0644 "$REPO/server/$SOCKET" "$DIR/$SOCKET"
 systemctl --user daemon-reload

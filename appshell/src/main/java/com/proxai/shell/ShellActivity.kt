@@ -236,6 +236,34 @@ class ShellActivity : Activity() {
             }.start()
         }
 
+        /** The scout's gig board through ProxMobile ("scout" feature). Resolves with the board JSON text. */
+        @JavascriptInterface
+        fun scout(callId: String) = viaProxMobile(callId, "scout", null)
+
+        /** A gig-board change ({"id", "status"?, "notes"?, "hours"?, "block"?}); the PC applies it within a minute. */
+        @JavascriptInterface
+        fun scoutUpdate(callId: String, json: String) = viaProxMobile(callId, "scout-update", json.take(8192))
+
+        private fun viaProxMobile(callId: String, method: String, arg: String?) {
+            fun reply(payload: JSONObject) =
+                runOnUiThread { web.evaluateJavascript("window.__proxaiResolve(${JSONObject.quote(callId)}, $payload)", null) }
+            if (!has("scout")) {
+                reply(JSONObject().put("ok", false).put("error", "This app wasn't built with the 'scout' feature."))
+                return
+            }
+            Thread {
+                val payload = try {
+                    val b = contentResolver.call(android.net.Uri.parse(ShellLogic.PC_STATS_URI), method, arg, null)
+                    val json = b?.getString("json")
+                    if (json != null) JSONObject().put("ok", true).put("text", json)
+                    else JSONObject().put("ok", false).put("error", b?.getString("error") ?: "ProxMobile isn't installed or is too old")
+                } catch (e: Exception) {
+                    JSONObject().put("ok", false).put("error", "ProxMobile isn't installed or is too old (needs 0.6.4)")
+                }
+                reply(payload)
+            }.start()
+        }
+
         /** Asking ProxAI from a generated app goes through ProxMobile (it holds the key). Coming
          *  in a later step; until then the promise rejects with a clear message. */
         @JavascriptInterface
