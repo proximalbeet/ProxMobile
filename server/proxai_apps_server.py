@@ -242,6 +242,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def log_request(self, code="-", size="-"):
+        # One line per request in the journal (path and status only; the key is a header and never logged).
+        # Added 10-24 to see whether the phone fetches /v1/pc/notices.
+        path = self.path.split("?")[0][:80]
+        print(f"{self.command} {path} {code}", file=sys.stderr, flush=True)
+
     def _json(self, code: int, body):
         data = json.dumps(body).encode()
         self.send_response(code)
