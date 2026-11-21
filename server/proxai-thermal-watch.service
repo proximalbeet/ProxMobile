@@ -1,0 +1,24 @@
+[Unit]
+Description=ProxAI PC thermal watch (GPU/CPU/RAM every second; alerts for ProxMobile; unloads Ollama on a critical GPU reading)
+Documentation=file://%h/dev/projects/ProxMobile/docs/PROXAI-APPS.md
+After=ollama.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I %h/dev/projects/ProxMobile/server/proxai_thermal_watch.py
+Environment=PYTHONUNBUFFERED=1
+Nice=10
+# nvidia-smi exiting (driver reload, GPU reset) ends the script; start it again.
+Restart=always
+RestartSec=10
+# Writes only its own state folder; reads /sys (temps), /proc, the GPU through nvidia-smi, and
+# talks to Ollama on 127.0.0.1 (to unload models on a critical reading).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+PrivateTmp=yes
+BindPaths=%h/.local/state/proxai/thermal-watch
+BindReadOnlyPaths=%h/dev/projects/ProxMobile/server
+
+[Install]
+WantedBy=default.target

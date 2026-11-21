@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- v0.3: reminder + reply notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 0.9.9, ProxAI line: when a call starts and ends (asked only when "No PIN while unlocked" is switched on) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- S1: fingerprint/face for the app lock -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Reminders go off on time. USE_EXACT_ALARM is granted on install (Android 13+);
+         older versions use SCHEDULE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 0.9.4: the Workbench login listener (a quiet foreground service), and asking to run in the background -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 0.9.6: an app or file going to the PC keeps going in the background (ResearchSendService) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- WAKE-PHONE: "Hey Prox" listens in a microphone foreground service (green mic dot + a fixed notification),
+         keeps the CPU awake only while the mic is open, and buzzes when it hears the word -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- v0.4: install apps ProxAI built on the PC (Android still asks before each install) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
+    <queries>
+        <!-- 0.9.11: the Prox Hub app (a ProxAI-built app with the hub feature) receives Prox Hub notices -->
+        <intent>
+            <action android:name="com.proxai.shell.HUB_NOTICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- v0.4: see which ProxAI-built apps are installed (and their versions) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- 0.9.5 (P3): apps that offer home-screen widgets, for Attach > "An app on this phone" -->
+        <intent>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".ProxApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ProxAI">
+
+        <!-- Main app: Chat / Apps / Settings -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- proxai://connect?url=...&key=... (from the desktop QR code) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="proxai" android:host="connect" />
+                <data android:scheme="proxai" android:host="workbench" />
+            </intent-filter>
+        </activity>
+
+        <!-- Voice overlay opened by long-press power / assist gesture / QS tile -->
+        <activity
+            android:name=".ui.AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.proxai.hermes.assist"
+            android:theme="@style/Theme.ProxAI.Overlay"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- P4 bridge (0.9.8): ProxAI.docs.unlock() in a PC-built app opens ProxAI's own proxDocs prompt.
+             Exported for those apps; it checks the caller (com.proxai.apps.*, pinned key, "docs" feature). -->
+        <activity
+            android:name=".ui.DocsUnlockActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.ProxAI.Overlay"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Runs a generated app full-screen; one task per app so pinned icons feel native -->
+        <activity
+            android:name=".ui.AppRunnerActivity"
+            android:exported="true"
+            android:documentLaunchMode="always"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:theme="@style/Theme.ProxAI" />
+
+        <!-- Makes ProxAI selectable as "Default digital assistant app" (power button) -->
+        <service
+            android:name=".assist.ProxVoiceInteractionService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".assist.ProxSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Android requires an assistant to ship a recognition service; this one is a stub -->
+        <service
+            android:name=".assist.StubRecognitionService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <!-- Reminder alarms and the Snooze / Done buttons on reminder notifications -->
+        <receiver
+            android:name=".notify.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Phase 2 (C6): PDFs ProxAI sends, opened in the phone's PDF viewer (only cache/media is shared) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.proxai.hermes.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Phase 2 (C3): replies typed into a notification -->
+        <receiver
+            android:name=".notify.ReplyReceiver"
+            android:exported="false" />
+
+        <!-- VAULT-UNDO-APP (0.9.18): a vault-change notification's Undo -->
+        <receiver
+            android:name=".notify.VaultUndoReceiver"
+            android:exported="false" />
+
+        <!-- Alarms are cleared by a reboot or an app update; set them again -->
+        <receiver
+            android:name=".notify.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 0.9.6 (P3): sends an app or a file to the PC for ProxAI to look inside, with a progress notification -->
+        <service
+            android:name=".notify.ResearchSendService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!-- 0.9.4 / 0.9.9: quiet long polls to the owner's PC, so its notices and Workbench login requests
+             pop up right away (was .notify.WorkbenchListener) -->
+        <service
+            android:name=".notify.PcListener"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps one connection to the owner's own PC so its notices and login requests arrive right away" />
+        </service>
+
+        <!-- WAKE-PHONE: listens for "Hey Prox" on the phone only, while Settings > Voice > Listen for "Hey Prox" is on -->
+        <service
+            android:name=".voice.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- WAKE-PHONE: the "Hey Prox" tile: mute for 1 hour or until turned back on -->
+        <service
+            android:name=".assist.WakeTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/wake_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Quick Settings tile: one tap to talk to Hermes -->
+        <service
+            android:name=".assist.AssistTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <receiver android:name=".data.InstallResultReceiver" android:exported="false" />
+        <!-- v0.5: PC stats for ProxAI-built apps ("pc-stats" feature); checks the caller's signature -->
+        <provider
+            android:name=".data.PcStatsProvider"
+            android:authorities="com.proxai.hermes.pcstats"
+            android:exported="true" />
+    </application>
+</manifest>

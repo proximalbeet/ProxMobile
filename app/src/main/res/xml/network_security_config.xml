@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain HTTP is allowed so a raw Tailscale IP (100.x) works; Tailscale already encrypts
+     that traffic. Prefer the https://*.ts.net URL from `tailscale serve` when possible. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

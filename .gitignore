@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+.claude/
+__pycache__/
+.scratch/
+# WAKE-PHONE: the engine and the keyword model are fetched by scripts/wake-engine.sh, never committed
+app/libs/*.aar
+app/wake/

@@ -1,0 +1,6 @@
+# WAKE-PHONE: sha256 of the 5 installed model files (scripts/wake-engine.sh install). The build checks them.
+1e721676515bcd42a186979733981213c66c80db680e1cc582dfedf3be76e678  encoder.onnx
+e40ff43297abe815e8898494c17e71bba2152d9d40fa3eb803f75d0f7533329a  decoder.onnx
+eae9da0c7e1e6c6a3f4cc42d167899c388f6c6701b94cb96320e4f55df79624c  joiner.onnx
+fd2ded4050a55d2b1578870ba8697d02371980217806b7558bd0a5cc60f3ba53  tokens.txt
+2cf446e1d55fa7e8cbb4eb5862f6b368bb097da328dd5081b55da17dc24aa60e  keywords.txt

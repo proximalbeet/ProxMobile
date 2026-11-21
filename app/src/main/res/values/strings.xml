@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ProxAI</string>
+    <string name="tile_label">Ask ProxAI</string>
+    <string name="wake_tile_label">Hey Prox</string>
+</resources>

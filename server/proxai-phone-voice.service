@@ -1,0 +1,40 @@
+[Unit]
+Description=ProxMobile voice relay (passes the phone's words to ProxAI's voice door; no network, key or model)
+Documentation=file://%h/dev/projects/ProxMobile/README.md
+# Started on demand by proxai-phone-voice.socket; exits by itself after PROXAI_VOICE_IDLE seconds.
+Requires=proxai-phone-voice.socket
+After=proxai-phone-voice.socket
+
+[Service]
+Type=simple
+# VOICE-RELAY (2026-11-17): the system's own python, isolated (-I: no user site, no PYTHON* variables).
+# Standard library only; it reads no key file, no state folder and no model.
+ExecStart=/usr/bin/python3 -I %h/dev/projects/ProxMobile/server/voice_server.py
+Environment=PROXAI_VOICE_IDLE=300
+Environment=PROXAI_VOICE_DOOR=%h/.local/state/proxai/voice/api/voice.sock
+# The idle exit is a clean exit (code 0), so this only restarts after a crash.
+Restart=on-failure
+RestartSec=5
+
+# The unit's own sandbox (it replaces the hand-installed drop-in 40-sandbox.conf).
+# Do not add an Exec...=+ line or a TemporaryFileSystem= line: a '+' line in a user unit that has
+# TemporaryFileSystem= fails to start with 226/NAMESPACE (tested on this PC, 2026-11-17).
+NoNewPrivileges=yes
+# Socket activation hands over the listener (127.0.0.1:8653); the server needs no network of its own,
+# and may only make Unix sockets (the door). The handed-in socket isn't affected by this.
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=tmpfs
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryMax=256M
+# Nathan's user is in the docker group: talking to the docker socket is root, and PrivateNetwork
+# doesn't block Unix sockets. Tailscale's local socket is hidden too.
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/run/tailscale
+# All it sees of home: its own code and the voice door's folder, both read-only. Nothing else:
+# no key file, no whole state folder, no voice folder, no venv, no model caches.
+BindReadOnlyPaths=%h/dev/projects/ProxMobile/server %h/.local/state/proxai/voice/api

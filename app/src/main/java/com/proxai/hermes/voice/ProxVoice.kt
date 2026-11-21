@@ -1,0 +1,130 @@
+package com.proxai.hermes.voice
+
+import com.proxai.hermes.data.HermesConfig
+import com.proxai.hermes.data.baseUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+/**
+ * Client for Prox's voice on the PC, published by Tailscale Serve at <server>/voice. The PC's
+ * server/voice_server.py only relays the text to ProxAI, which makes the mp3.
+ */
+class ProxVoice(
+    private val config: HermesConfig,
+    private val cacheDir: File,
+    private val http: OkHttpClient = DEFAULT_HTTP,
+) {
+    private val voiceUrl get() = config.baseUrl + "/voice"
+
+    /** Ask the PC to load the model now, so it's warm by the time Hermes has answered. */
+    fun warmup() {
+        if (!config.isConfigured) return
+        val req = Request.Builder().url("$voiceUrl/v1/warmup")
+            .header("Authorization", "Bearer ${config.apiKey}")
+            .post("{}".toRequestBody(JSON)).build()
+        http.newCall(req).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) = response.close()
+        })
+    }
+
+    /** Speaks [text] in Prox's voice; returns an mp3 file the caller deletes after playing. */
+    suspend fun synth(text: String): File = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("text", text).toString().toRequestBody(JSON)
+        val req = Request.Builder().url("$voiceUrl/v1/tts")
+            .header("Authorization", "Bearer ${config.apiKey}")
+            .post(body).build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val msg = runCatching { JSONObject(resp.body!!.string()).optString("error") }.getOrNull()
+                throw IOException(when (resp.code) {
+                    401 -> "Prox's voice rejected the API key"
+                    404 -> "Prox's voice isn't set up on the PC"
+                    502 -> "Prox's voice service isn't running on the PC"
+                    else -> msg?.takeIf { it.isNotBlank() } ?: "Prox's voice failed (HTTP ${resp.code})"
+                })
+            }
+            val type = resp.header("Content-Type") ?: ""
+            if (!type.trim().startsWith("audio/", ignoreCase = true)) {
+                throw IOException("Prox's voice sent something that isn't audio")
+            }
+            val file = File.createTempFile("prox-voice-", ".mp3", cacheDir)
+            resp.body!!.byteStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+            file
+        }
+    }
+
+    companion object {
+        /** What the voice bridge reports when the PC's voice said it (the phone voice reports "phone"). */
+        const val SPOKEN_BY_PC = "pc"
+
+        private val JSON = "application/json; charset=utf-8".toMediaType()
+
+        /** Piece size sent to the PC. Was 300; 200+ char pieces ran the GPU out of memory with the
+         *  local model loaded (10-22), and shorter pieces need less of it. */
+        const val MAX_PIECE = 180
+
+        /** The PC can't be reached at all (no point retrying a piece). */
+        fun unreachable(e: Throwable): Boolean =
+            e is java.net.ConnectException || e is java.net.UnknownHostException ||
+                e is java.net.SocketTimeoutException ||
+                (e.message ?: "").let { "isn't running" in it || "isn't set up" in it || "rejected the API key" in it }
+
+        // A cold model takes ~9 s to load on the PC; warm sentences take ~1-2 s.
+        private val DEFAULT_HTTP = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .build()
+
+        /**
+         * Splits speech into pieces the phone fetches one after another. The first piece is just
+         * the first sentence so audio starts quickly; the rest are packed up to [max] chars
+         * (Chatterbox gets unstable on long inputs).
+         */
+        fun chunks(text: String, max: Int = MAX_PIECE): List<String> {
+            val sentences = text.trim().split(Regex("(?<=[.!?])\\s+"))
+                .flatMap { s -> if (s.length <= max) listOf(s) else splitLong(s, max) }
+                .filter { it.isNotBlank() }
+            if (sentences.isEmpty()) return emptyList()
+            val out = mutableListOf(sentences.first())
+            var current = ""
+            for (s in sentences.drop(1)) {
+                if (current.isNotEmpty() && current.length + s.length + 1 > max) {
+                    out += current
+                    current = s
+                } else {
+                    current = if (current.isEmpty()) s else "$current $s"
+                }
+            }
+            if (current.isNotEmpty()) out += current
+            return out
+        }
+
+        /** A single sentence longer than [max]: break at commas, then at spaces. */
+        private fun splitLong(s: String, max: Int): List<String> {
+            val out = mutableListOf<String>()
+            var current = ""
+            for (word in s.split(" ")) {
+                if (current.isNotEmpty() && current.length + word.length + 1 > max) {
+                    out += current
+                    current = word
+                } else {
+                    current = if (current.isEmpty()) word else "$current $word"
+                }
+            }
+            if (current.isNotEmpty()) out += current
+            return out
+        }
+    }
+}

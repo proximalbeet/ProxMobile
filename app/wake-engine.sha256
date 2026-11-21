@@ -1,0 +1,21 @@
+# WAKE-PHONE: the pins for "Hey Prox" (README, "Hey Prox"). Every value starts empty, and nothing installs or
+# builds with the engine while one is empty.
+# 1. scripts/wake-engine.sh --print-hashes   (downloads to a temp folder, prints sha256, size and licences, installs nothing)
+# 2. Compare: the AAR's sha256 with the digest GitHub shows on the v2.0.1 release page; the model's with the
+#    kws-models release's checksum.txt. Read both licence pages. Fill aar_sha256 and model_sha256.
+# 3. scripts/wake-engine.sh --keywords       (once: writes app/wake-keywords.txt and prints keywords_sha256)
+# 4. Fill keywords_sha256 and engine_licence (model_licence is his pick below), commit, then: scripts/wake-engine.sh install
+#    (it writes app/wake-model.sha256, the 5 model files' sha256: commit it too; the build checks them).
+#
+# sherpa-onnx 2.0.1, https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar
+# (pinned 11-18: matches the sha256 GitHub's release page lists for it, a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7)
+aar_sha256=a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7
+# Apache-2.0 or MIT only (never unstated-own-phone): https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.1/LICENSE
+engine_licence=Apache-2.0
+# https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
+model_sha256=f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a
+# Apache-2.0, MIT or unstated-own-phone (this one for the model only: its authors state no licence, so the APK
+# stays on Nathan's own phone; the NOTICE repeats it). Nathan's pick, 11-18: "Add it to prox mobile as a feature".
+model_licence=unstated-own-phone
+# app/wake-keywords.txt: "HEY PROX" in the model's tokens with its own threshold (--keywords writes it)
+keywords_sha256=2cf446e1d55fa7e8cbb4eb5862f6b368bb097da328dd5081b55da17dc24aa60e

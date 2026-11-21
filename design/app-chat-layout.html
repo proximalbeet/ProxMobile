@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat Layout Mockups</title>
+<style>
+  :root { --bg:#070b12; --surf:#0d121b; --rail:#0a0e16; --panel:#111827; --hi:#1b2536; --txt:#e6edf7; --dim:#8b98ad;
+          --blue:#4ea8ff; --dot:#f2f5fa; --badge:#e5484d; --line:#1f2a3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.35 system-ui, sans-serif; padding:16px; }
+  h1 { font-size:18px; margin:0 0 4px; } p.lead { color:var(--dim); margin:0 0 18px; max-width:760px; }
+  .row { display:flex; flex-wrap:wrap; gap:20px; }
+  figure { margin:0; width:100%; max-width:360px; }
+  figcaption { color:var(--dim); font-size:12px; margin-top:6px; }
+  figcaption b { color:var(--txt); }
+  .phone { height:640px; background:var(--surf); border:1px solid var(--line); border-radius:22px; overflow:hidden;
+           display:flex; flex-direction:column; position:relative; }
+  .bar { padding:12px 12px 8px; display:flex; gap:10px; align-items:flex-start; border-bottom:1px solid var(--line); }
+  .ico { width:28px; height:28px; display:grid; place-items:center; color:var(--dim); position:relative; flex:none; }
+  .ico .d { position:absolute; top:3px; right:2px; width:8px; height:8px; border-radius:50%; background:var(--dot); }
+  .ttl { flex:1; min-width:0; } .ttl b { color:var(--blue); } .ttl small { display:block; color:var(--dim); font-size:11px; }
+  .msgs { flex:1; padding:10px 12px; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+  .day { text-align:center; color:var(--dim); font-size:11px; }
+  .me { align-self:flex-end; background:#1d4ed8; padding:8px 12px; border-radius:16px 16px 4px 16px; max-width:75%; }
+  .ai { align-self:flex-start; background:var(--hi); padding:8px 12px; border-radius:16px 16px 16px 4px; max-width:80%; }
+  .nt { align-self:flex-start; background:#151e2d; padding:8px 12px; border-radius:16px; max-width:85%; border:1px solid var(--line); }
+  .nt i { display:block; font-style:normal; font-size:10px; color:var(--blue); letter-spacing:.06em; font-weight:600; }
+  .inp { margin:8px 12px; border:1px solid var(--line); border-radius:22px; padding:10px 14px; color:var(--dim); }
+  .nav { display:flex; justify-content:space-around; padding:10px 0 12px; background:#0d121bf2; border-top:1px solid var(--line);
+         color:var(--dim); font-size:12px; } .nav .on { color:var(--blue); }
+  .split { flex:1; display:flex; min-height:0; }
+  .rail { width:64px; background:var(--rail); display:flex; flex-direction:column; align-items:center; gap:10px; padding:12px 0; }
+  .sv { width:44px; height:44px; border-radius:50%; background:var(--hi); display:grid; place-items:center; font-weight:700;
+        font-size:13px; position:relative; color:var(--txt); }
+  .sv.p { background:linear-gradient(135deg,#2563eb,#4ea8ff); }
+  .sv.sel { border-radius:14px; outline:2px solid var(--blue); }
+  .sv .d { position:absolute; left:-9px; top:18px; width:6px; height:8px; border-radius:0 4px 4px 0; background:var(--dot); }
+  .sv .n { position:absolute; right:-3px; bottom:-3px; background:var(--badge); font-size:10px; min-width:18px; height:18px;
+           border-radius:9px; display:grid; place-items:center; border:2px solid var(--rail); }
+  .sep { width:32px; height:2px; background:var(--line); }
+  .grow { flex:1; }
+  .panel { flex:1; background:var(--panel); padding:12px 10px; min-width:0; }
+  .panel h3 { font-size:11px; letter-spacing:.08em; color:var(--dim); margin:4px 4px 8px; display:flex; justify-content:space-between; }
+  .ch { display:flex; align-items:center; gap:8px; padding:8px; border-radius:8px; color:var(--dim); }
+  .ch.un { color:var(--txt); font-weight:600; } .ch.sel { background:var(--hi); color:var(--txt); }
+  .ch .h { opacity:.7; } .ch .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ch .s { font-size:11px; color:var(--blue); font-weight:400; }
+  .ch .u { width:8px; height:8px; border-radius:50%; background:var(--dot); }
+  .ch .n { background:var(--badge); color:#fff; font-size:10px; border-radius:9px; padding:1px 6px; }
+  .peek { width:28px; background:var(--surf); border-left:1px solid var(--line); opacity:.6; }
+  .dmhead { padding:4px 6px 10px; border-bottom:1px solid var(--line); margin-bottom:8px; }
+  .dmhead b { display:block; } .dmhead small { color:var(--dim); }
+  .seen { font-size:12px; padding:6px 8px; display:flex; gap:6px; align-items:baseline; }
+  .seen i { font-style:normal; font-size:9px; color:var(--blue); letter-spacing:.06em; font-weight:600; flex:none; }
+  .seen q { quotes:none; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seen em { color:var(--dim); font-size:10px; }
+  .shade { position:absolute; inset:0; background:#000a; display:flex; align-items:flex-end; }
+  .sheet { width:100%; background:var(--panel); border-radius:18px 18px 0 0; padding:14px 16px 22px; }
+  .sheet .hd { color:var(--dim); font-size:12px; border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:4px; }
+  .sheet div.it { padding:11px 2px; } .sheet div.it.red { color:#ff8b8b; }
+  @media (max-width:420px) { body { padding:16px; } }
+</style>
+</head>
+<body>
+<h1>APP-CHAT-LAYOUT: chats like a Discord server</h1>
+<p class="lead">Phone-width mock-ups for Nathan's pick. Made-up channel names. Shapes 1 to 4 are option A (the drawer,
+recommended), and shape 5 is option B (list first). The choices are in <code>design/app-chat-layout.md</code>, section 7.</p>
+<div class="row">
+
+<figure><div class="phone">
+  <div class="bar"><div class="ico">☰<span class="d"></span></div>
+    <div class="ttl">One Touch › <b>#quotes</b><small>ready · cloud (personal mode)</small><small>$0.004 so far · ~12k</small></div>
+    <div class="ico">⤡</div><div class="ico">✎</div></div>
+  <div class="msgs"><div class="day">── Today ──</div>
+    <div class="me">Draft the follow-up text for the siding quote</div>
+    <div class="ai">Here's a short one: "Hi, it's One Touch. Just checking you got the quote…"</div></div>
+  <div class="inp">Message #quotes</div>
+  <div class="nav"><span class="on">Chat</span><span>Apps</span><span>Docs</span><span>Settings</span></div>
+</div><figcaption><b>1 · The chat, full screen.</b> As today; # becomes ☰ with a dot when something else is unread.</figcaption></figure>
+
+<figure><div class="phone">
+  <div class="split">
+    <div class="rail">
+      <div class="sv p">P<span class="d"></span><span class="n">3</span></div><div class="sep"></div>
+      <div class="sv sel">OT<span class="d"></span></div><div class="sv">📚</div><div class="sv">BU</div>
+      <div class="grow"></div><div class="sv">+</div><div class="sv">🗑</div></div>
+    <div class="panel"><h3>ONE TOUCH <span>⋯</span></h3>
+      <div class="ch sel un"><span class="h">#</span><span class="nm">quotes</span><span class="n">2</span></div>
+      <div class="ch un"><span class="h">#</span><span class="nm">follow-ups</span><span class="u"></span></div>
+      <div class="ch"><span class="h">#</span><span class="nm">site</span></div>
+      <div class="ch"><span class="h">#</span><span class="nm">pipeline</span><span class="s">answering…</span></div>
+      <div class="ch"><span class="h">+</span><span class="nm">New channel</span></div></div>
+    <div class="peek"></div></div>
+</div><figcaption><b>2 · Swipe right / ☰.</b> The rail (the DM on top, then groups, then + and Trash), with the
+group's channels. A dot means unread, and a number counts notices that buzzed.</figcaption></figure>
+
+<figure><div class="phone">
+  <div class="split">
+    <div class="rail">
+      <div class="sv p sel">P<span class="n">3</span></div><div class="sep"></div>
+      <div class="sv">OT<span class="d"></span></div><div class="sv">📚</div><div class="sv">BU</div>
+      <div class="grow"></div><div class="sv">+</div><div class="sv">🗑</div></div>
+    <div class="panel"><div class="dmhead"><b>ProxAI</b><small>Your DM · briefs and notices land here</small></div>
+      <div class="ch sel un"><span class="h">💬</span><span class="nm">Open the DM</span><span class="n">3</span></div>
+      <h3 style="margin-top:14px">SINCE YOU LOOKED</h3>
+      <div class="seen"><i>RHYTHM</i><q>Morning brief</q></div>
+      <div class="seen"><i>SCOUT</i><q>3 roofers to call</q></div>
+      <div class="seen"><i>PC</i><q>Build finished</q><em>quiet</em></div></div>
+    <div class="peek"></div></div>
+</div><figcaption><b>3 · The DM.</b> Still one conversation. The newest notices are listed by kind and title only.
+"quiet" marks a switched-off or tier "thread" notice: a dot, never a number.</figcaption></figure>
+
+<figure><div class="phone">
+  <div class="split"><div class="rail"><div class="sv p">P</div><div class="sep"></div><div class="sv sel">OT</div></div>
+    <div class="panel"><h3>ONE TOUCH</h3><div class="ch sel"><span class="h">#</span><span class="nm">quotes</span></div></div></div>
+  <div class="shade"><div class="sheet"><div class="hd">#quotes · One Touch · Haiku 5.5</div>
+    <div class="it">✓ Mark as read</div><div class="it">✎ Rename / model</div><div class="it">⇄ Move to group…</div>
+    <div class="it">🔕 Mute its dot</div><div class="it">✚ New chat here (this one → Trash)</div>
+    <div class="it red">🗑 Delete channel</div></div></div>
+</div><figcaption><b>4 · Long-press a channel.</b> Today's ⋮ items plus Mark read, Move to group and Mute dot.</figcaption></figure>
+
+<figure><div class="phone">
+  <div class="split">
+    <div class="rail"><div class="sv p">P<span class="d"></span><span class="n">3</span></div><div class="sep"></div>
+      <div class="sv sel">OT</div><div class="sv">📚</div><div class="sv">BU</div><div class="grow"></div><div class="sv">+</div><div class="sv">🗑</div></div>
+    <div class="panel"><h3>ONE TOUCH <span>⋯</span></h3>
+      <div class="ch un"><span class="h">#</span><span class="nm">quotes</span><span class="n">2</span></div>
+      <div class="ch un"><span class="h">#</span><span class="nm">follow-ups</span><span class="u"></span></div>
+      <div class="ch"><span class="h">#</span><span class="nm">site</span></div>
+      <div class="ch"><span class="h">#</span><span class="nm">pipeline</span><span class="s">answering…</span></div></div></div>
+  <div class="nav"><span class="on">Chat</span><span>Apps</span><span>Docs</span><span>Settings</span></div>
+</div><figcaption><b>5 · Option B, list first.</b> The Chat tab opens here, you tap into a chat, and Back returns here.</figcaption></figure>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Template only (lets Gradle build the shell). proxai-app-build writes each app's real manifest,
+     naming the same two classes, with only the permissions the app's features need. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Shell kit 12: every app calls ProxMobile's door (content://com.proxai.hermes.pcstats). Android 11+ shows an
+         app another package only if it's named here, installed it, or touched it lately; without this line an app
+         installed outside ProxMobile's Apps tab loses ProxMobile after a reboot or an update. The builder's
+         manifest needs the same line. -->
+    <queries>
+        <package android:name="com.proxai.hermes" />
+    </queries>
+    <application
+        android:label="ProxAI app"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity
+            android:name="com.proxai.shell.ShellActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name="com.proxai.shell.ReminderReceiver" android:exported="false" />
+        <receiver android:name="com.proxai.shell.HubNoticeReceiver" android:exported="true">
+            <intent-filter><action android:name="com.proxai.shell.HUB_NOTICE" /></intent-filter>
+        </receiver>
+    </application>
+</manifest>

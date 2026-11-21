@@ -1,0 +1,42 @@
+[Unit]
+Description=ProxAI apps server (lists ProxAI-built apps and serves their APKs to ProxMobile; takes phone APKs for app research)
+Documentation=file://%h/dev/projects/ProxMobile/docs/PROXAI-APPS.md
+Requires=proxai-apps.socket
+After=proxai-apps.socket
+
+[Service]
+Type=simple
+# OWNER-SIGNED-DIR: make the owner-signed folder first so the optional bind below can never silently skip.
+# The '+' runs this outside the unit's sandbox (ProtectHome/binds): without it the mkdir lands in the service's private
+# view, not on the host, and the bind still skips. It only makes one folder in his own home, as his user.
+# WARNING (VOICE-RELAY, 2026-11-17): this '+' line works only while this unit has no TemporaryFileSystem= line and
+# no bind to a different place (BindPaths=/BindReadOnlyPaths= with a "source:target" pair). Adding either makes the
+# unit fail to start (226/NAMESPACE; tested on this PC).
+ExecStartPre=+/usr/bin/mkdir -p -m 0700 %h/.local/share/proxai-owner-signed
+ExecStart=/usr/bin/python3 -I %h/dev/projects/ProxMobile/server/proxai_apps_server.py
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+# The Study Coach plugin's Unix socket (tutor/api) is the only way in to it; proxDocs's (docs/api, P4) too.
+# Sees only the apps folder (read-only, signing key hidden), the thermal watch output (read-only),
+# the API key file, its own code and (read-only, Phase 2 C6) the outbox of images ProxAI made for chat,
+# and (read-only, P2) Claude's limits + ProxAI's Claude spend from proxai-claude-usage.
+NoNewPrivileges=yes
+ProtectSystem=strict
+# Nathan's user is in the docker group: hide the docker socket (talking to it = root), which
+# PrivateNetwork alone doesn't block (it's a Unix socket).
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+ProtectHome=tmpfs
+PrivateTmp=yes
+# Socket activation hands over the listening socket, so the server needs no network of its own.
+PrivateNetwork=yes
+# RESERVED-APPS (2026-11-16): the proxai-apps plugin's vetted-builds record, read-only; without it nothing is served.
+BindReadOnlyPaths=-%h/.local/state/proxai/apps-reach.json
+# OWNER-SIGN (2026-11-16): Prox Hub's and BoardRoom's host-signed copies, read-only; the only place those two are
+# served from. Without it they aren't served at all.
+BindReadOnlyPaths=-%h/.local/share/proxai-owner-signed
+BindReadOnlyPaths=%h/dev/proxai/apps %h/.hermes/profiles/proxai/.env %h/dev/projects/ProxMobile/server -%h/.local/state/proxai/thermal-watch -%h/.local/state/proxai/claude-usage -%h/.local/state/proxai/context -%h/.local/state/proxai/notices -%h/.local/state/proxai/approvals -%h/.local/state/proxai/scout -%h/.local/state/proxai/tutor/api -%h/.local/state/proxai/docs/api -%h/.local/share/proxai/outbox
+# Writable: the scout gig board's change requests (proxai-scout applies them), and (P3, 2026-10-31)
+# app-research, where the phone's "An app on this phone" puts APK files for Claude Code + REA.
+BindPaths=-%h/.local/state/proxai/scout/inbox -%h/dev/proxai/app-research
+InaccessiblePaths=-%h/dev/proxai/apps/.signing
